@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="pt-PT">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>OmniPlay — Todos os jogos. Um só universo.</title>
+  <meta name="description" content="OmniPlay: o hub de jogos multiplayer. Joga Mexicana online com amigos ou até 6 jogadores no mesmo dispositivo, mesmo offline.">
+  <meta name="theme-color" content="#07080d">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <canvas id="bg" aria-hidden="true"></canvas>
+  <div class="vignette" aria-hidden="true"></div>
+
+  <header class="topbar" id="topbar">
+    <a class="brand" id="brand" href="#hub" aria-label="OmniPlay — Hub">
+      <svg class="logo" viewBox="0 0 64 64" aria-hidden="true">
+        <defs>
+          <linearGradient id="lg1" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#22d3ee"/><stop offset=".55" stop-color="#a78bfa"/><stop offset="1" stop-color="#fb923c"/></linearGradient>
+        </defs>
+        <circle cx="32" cy="32" r="26" fill="none" stroke="url(#lg1)" stroke-width="6"/>
+        <path d="M20 32c0-5 3.5-8 7-8 6 0 5 16 11 16 3.5 0 7-3 7-8" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" opacity=".9"/>
+      </svg>
+      <span class="brand-name">Omni<b>Play</b></span>
+    </a>
+
+    <nav class="nav" id="nav" aria-label="Navegação principal">
+      <button class="nav-btn" data-nav="hub" id="nav-hub">Hub</button>
+      <button class="nav-btn" data-nav="friends" id="nav-friends">Amigos <span class="badge" id="friend-badge" hidden>0</span></button>
+      <button class="nav-btn" data-nav="ranking" id="nav-ranking">Ranking</button>
+    </nav>
+
+    <div class="top-right">
+      <span class="net-pill" id="net-pill" title="Estado da ligação"><i></i><span>Offline</span></span>
+      <button class="btn btn-sm btn-neon btn-top-login" id="btn-top-login" type="button">🔑 Entrar</button>
+      <button class="passport glass" id="passport" aria-label="Passaporte Omni — abrir perfil"></button>
+    </div>
+  </header>
+
+  <main id="view" tabindex="-1"></main>
+
+  <div class="portal" id="portal" aria-hidden="true"><div class="portal-ring"></div></div>
+  <div id="modal-root"></div>
+  <div id="toasts" aria-live="polite"></div>
+
+  <script src="js/vendor/supabase.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/util.js"></script>
+  <script src="js/backend.js"></script>
+  <script src="js/session.js"></script>
+  <!-- Jogos escondidos do menu (descomenta para os repor):
+  <script src="js/games/connect4.js"></script>
+  <script src="js/games/reflex.js"></script>
+  -->
+  <script src="js/games/mexicana.js"></script>
+  <script src="js/views.js"></script>
+  <script src="js/play.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
