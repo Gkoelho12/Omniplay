@@ -407,24 +407,20 @@
         if (isMe) {
           actionHtml = `<span class="chip">(És tu)</span>`;
         } else if (friendIds.has(u.id) || friendIds.has(u.username) || (u.id && friendIds.has(u.id.replace(/^usr_/, '')))) {
-          actionHtml = `<span class="chip good">✓ Amigos</span>`;
+          actionHtml = `<span class="chip good">✓ Amigos</span><button class="btn btn-sm btn-ghost" data-act="view-prof" data-pid="${u.id || u.username}">Ver Perfil</button>`;
         } else if (incMap.has(u.id) || incMap.has(u.username)) {
           const fid = incMap.get(u.id) || incMap.get(u.username);
           actionHtml = `<button class="btn btn-sm btn-neon" data-act="accept" data-fid="${fid}">Aceitar Pedido 🎉</button>`;
         } else if (outMap.has(u.id) || outMap.has(u.username) || (u.id && outMap.has(u.id.replace(/^usr_/, '')))) {
           const fid = outMap.get(u.id) || outMap.get(u.username) || outMap.get(u.id.replace(/^usr_/, ''));
           actionHtml = `<span class="chip">Pedido enviado ⏳</span><button class="btn btn-sm btn-ghost danger" data-act="cancel" data-fid="${fid}">Cancelar</button>`;
-        } else if (u.isDirect) {
-          actionHtml = `<button class="btn btn-sm btn-neon" data-act="add" data-id="${u.id}" data-name="@${esc(u.username)}">➕ Enviar Pedido a @${esc(u.username)}</button>`;
         } else {
           actionHtml = `<button class="btn btn-sm btn-neon" data-act="add" data-id="${u.id}" data-name="${esc(u.display_name)}">➕ Adicionar Amigo</button>`;
         }
 
-        const subtitle = u.isDirect
-          ? `Enviar pedido direto de amizade para este username`
-          : `@${esc(u.username)} · Nv ${levelInfo(u.xp).level}`;
+        const subtitle = `@${esc(u.username)} · Nv ${levelInfo(u.xp).level}`;
 
-        return `<div class="user-search-row glass ${u.isDirect ? 'direct-invite-row' : ''}" data-id="${u.id}">
+        return `<div class="user-search-row glass" data-id="${u.id}">
           <div class="usr-avatar">${avatar(u, 44)}</div>
           <div class="usr-info">
             <b>${esc(u.display_name || '@' + u.username)}</b>
@@ -434,6 +430,7 @@
         </div>`;
       }).join('');
 
+      $$('[data-act=view-prof]', box).forEach((b) => (b.onclick = () => openFriendProfileModal(b.dataset.pid)));
       $$('[data-act=accept]', box).forEach((b) => (b.onclick = () => handleAct(() => B.acceptRequest(+b.dataset.fid), 'Pedido aceite! Agora são amigos. 🎉')));
       $$('[data-act=cancel]', box).forEach((b) => (b.onclick = () => handleAct(() => B.removeFriendship(+b.dataset.fid), 'Pedido cancelado.')));
       $$('[data-act=add]', box).forEach((b) => (b.onclick = async () => {
@@ -642,6 +639,8 @@
       setTimeout(() => { location.href = `mexicana.html?invite=${encodeURIComponent(u)}`; }, 400);
     }));
 
+    $$('[data-act=profile]', listContainer).forEach((b) => (b.onclick = () => openFriendProfileModal(b.dataset.pid)));
+
     $$('[data-act=remove]', listContainer).forEach((b) => (b.onclick = () => {
       const name = b.dataset.name;
       if (confirm(`Queres mesmo remover ${name} dos teus amigos?`)) {
@@ -661,6 +660,166 @@
     if (searchInput && !searchInput.dataset.wired) {
       searchInput.dataset.wired = '1';
       searchInput.addEventListener('input', () => renderFriendsList(currentFriendsCache, byFriend));
+    }
+  }
+
+  /* ===================== RENDER H2H TODOS OS JOGOS ===================== */
+  function renderAllGamesH2H(games, otherName, otherUsername) {
+    if (!games || !games.length) {
+      return `<div class="empty-search muted small">Sem dados de confrontos para apresentar.</div>`;
+    }
+    const totWins = games.reduce((a, g) => a + (g.wins || 0), 0);
+    const totLosses = games.reduce((a, g) => a + (g.losses || 0), 0);
+    const totDraws = games.reduce((a, g) => a + (g.draws || 0), 0);
+    const totPlayed = games.reduce((a, g) => a + (g.played || 0), 0);
+
+    let leadText = '';
+    if (totPlayed === 0) {
+      leadText = `Ainda não disputaram nenhuma partida um contra o outro. Desafia o ${esc(otherName)} abaixo!`;
+    } else if (totWins > totLosses) {
+      leadText = `🏆 Estás em vantagem geral no confronto direto (+${totWins - totLosses} vitória${totWins - totLosses === 1 ? '' : 's'})!`;
+    } else if (totWins < totLosses) {
+      leadText = `⚠️ O ${esc(otherName)} está em vantagem no confronto direto (+${totLosses - totWins} vitória${totLosses - totWins === 1 ? '' : 's'}). Hora da desforra!`;
+    } else {
+      leadText = `🤝 Estão rigorosamente empatados no confronto geral!`;
+    }
+
+    return `
+      <div class="h2h-summary-banner glass">
+        <div class="h2h-sb-lead">
+          <span class="h2h-badge-total">Todos os Jogos (${totPlayed} partida${totPlayed === 1 ? '' : 's'})</span>
+          <p class="h2h-lead-txt">${leadText}</p>
+        </div>
+        <div class="h2h-sb-score">
+          <div class="h2h-score-col me">
+            <span class="h2h-lbl">Tu</span>
+            <b class="h2h-big-val win">${totWins}</b>
+            <span class="h2h-sub-lbl">vitórias</span>
+          </div>
+          <div class="h2h-score-sep">×</div>
+          <div class="h2h-score-col them">
+            <span class="h2h-lbl">${esc(otherName)}</span>
+            <b class="h2h-big-val loss">${totLosses}</b>
+            <span class="h2h-sub-lbl">vitórias</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="h2h-platform-grid">
+        ${games.map((g) => {
+          const played = g.played || 0;
+          const wPct = played ? Math.round((g.wins / played) * 100) : 0;
+          const lPct = played ? Math.round((g.losses / played) * 100) : 0;
+          const dPct = played ? Math.max(0, 100 - wPct - lPct) : 0;
+
+          let statusBadge = '';
+          if (played === 0) {
+            statusBadge = '<span class="chip mini muted">Por estrear</span>';
+          } else if (g.wins > g.losses) {
+            statusBadge = '<span class="chip mini good">À frente 🏆</span>';
+          } else if (g.wins < g.losses) {
+            statusBadge = '<span class="chip mini danger">Atrás ⚔️</span>';
+          } else {
+            statusBadge = '<span class="chip mini">Empatados 🤝</span>';
+          }
+
+          let playAction = '';
+          if (g.id === 'mexicana') {
+            playAction = `<a href="mexicana.html?invite=${encodeURIComponent(otherUsername || '')}" class="btn btn-sm btn-neon">🃏 Desafiar Mexicana</a>`;
+          } else if (g.id === 'connect4') {
+            playAction = `<a href="index.html#game/connect4" class="btn btn-sm btn-ghost">🔴 Jogar 4 em Linha</a>`;
+          } else {
+            playAction = `<a href="index.html#game/reflex" class="btn btn-sm btn-ghost">⚡ Jogar Reflexo</a>`;
+          }
+
+          return `
+            <div class="h2h-game-card glass" style="--ghue:${g.hue || 200}">
+              <div class="h2h-gc-top">
+                <div class="h2h-gc-title">
+                  <span class="h2h-gc-ic">${g.icon}</span>
+                  <div>
+                    <b>${esc(g.name)}</b>
+                    <small class="muted">${played === 0 ? 'Nenhum jogo disputado' : `${played} jogo${played === 1 ? '' : 's'}`}</small>
+                  </div>
+                </div>
+                ${statusBadge}
+              </div>
+
+              <div class="h2h-gc-score-row">
+                <div class="h2h-side me">
+                  <span class="h2h-side-tag">Tu</span>
+                  <span class="h2h-num win">${g.wins}</span>
+                  <small class="muted">vitórias</small>
+                </div>
+                <div class="h2h-vs-sign">vs</div>
+                <div class="h2h-side them">
+                  <span class="h2h-side-tag">${esc(otherName)}</span>
+                  <span class="h2h-num loss">${g.losses}</span>
+                  <small class="muted">vitórias</small>
+                </div>
+              </div>
+
+              <div class="h2h-bar-wrap" title="${g.wins}V - ${g.losses}D - ${g.draws || 0}E">
+                <div class="h2h-bar-track">
+                  <div class="h2h-bar-fill me" style="width:${wPct}%"></div>
+                  <div class="h2h-bar-fill draw" style="width:${dPct}%"></div>
+                  <div class="h2h-bar-fill them" style="width:${lPct}%"></div>
+                </div>
+                <div class="h2h-bar-legend">
+                  <span>${wPct}% teu</span>
+                  ${g.draws > 0 ? `<small class="muted">${g.draws} empates</small>` : ''}
+                  <span>${lPct}% adversário</span>
+                </div>
+              </div>
+
+              <div class="h2h-gc-footer">
+                ${playAction}
+              </div>
+            </div>`;
+        }).join('')}
+      </div>`;
+  }
+
+  async function openFriendProfileModal(pid) {
+    const m = openModal(`
+      <div class="friend-profile-modal">
+        <div class="loader"><i></i><i></i><i></i></div>
+      </div>`, { cls: 'modal-fpm' });
+    const modalEl = m.el.querySelector('.friend-profile-modal');
+    try {
+      const [{ data: prof }, { data: h2hData }] = await Promise.all([
+        B.getProfile(pid),
+        B.getH2H(pid)
+      ]);
+      const li = levelInfo(prof.xp);
+      modalEl.innerHTML = `
+        <div class="fpm-head glass pad mb-16">
+          <div class="fpm-avatar">${avatar(prof, 72)}</div>
+          <div class="fpm-info">
+            <h3 class="fpm-title">${esc(prof.display_name)}</h3>
+            <p class="muted small">@${esc(prof.username)} · Nível ${li.level} · ⭐ ${prof.xp} XP</p>
+            ${prof.bio ? `<p class="fpm-bio">${esc(prof.bio)}</p>` : ''}
+          </div>
+        </div>
+        <div class="fpm-h2h-section">
+          <h4 class="sec-title mb-8">⚔️ Confronto Direto vs ${esc(prof.display_name)} (Todos os Jogos)</h4>
+          <p class="muted small mb-16">Histórico de vitórias e derrotas em cada jogo da plataforma OmniPlay.</p>
+          ${renderAllGamesH2H(h2hData, prof.display_name, prof.username)}
+        </div>
+        <div class="fpm-actions mt-20" style="display:flex;justify-content:space-between;align-items:center;">
+          <a href="index.html#profile?id=${encodeURIComponent(prof.id || prof.username)}" class="btn btn-ghost btn-sm">Abrir Página Completa ↗</a>
+          <button class="btn btn-neon btn-sm" id="btn-fpm-close">Fechar</button>
+        </div>`;
+      $('#btn-fpm-close', modalEl)?.addEventListener('click', () => m.close());
+    } catch (err) {
+      modalEl.innerHTML = `
+        <div class="empty glass pad text-center" style="padding:24px;">
+          <div class="empty-ic" style="font-size:3rem;margin-bottom:8px;">👤</div>
+          <h3>Perfil não encontrado</h3>
+          <p class="muted mb-16">Este utilizador não existe ou ainda não criou conta no OmniPlay.</p>
+          <button class="btn btn-neon btn-sm" id="btn-fpm-err-close">Fechar</button>
+        </div>`;
+      $('#btn-fpm-err-close', modalEl)?.addEventListener('click', () => m.close());
     }
   }
 
@@ -692,6 +851,7 @@
 
       <div class="fc-actions">
         <button class="btn btn-sm btn-neon" data-act="invite-mx" data-pid="${p.id}" data-uname="${esc(p.username)}">🃏 Desafiar Mexicana</button>
+        <button class="btn btn-sm btn-ghost" data-act="profile" data-pid="${p.id}">👁️ Ver Perfil & H2H</button>
         <button class="btn btn-sm btn-ghost danger" data-act="remove" data-fid="${f.fid}" data-name="${esc(p.display_name)}" title="Remover amigo">✕</button>
       </div>
     </article>`;

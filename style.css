@@ -1361,6 +1361,295 @@ main#view.enter { animation: viewIn .5s cubic-bezier(.2, .8, .2, 1); }
 .reward span { color: var(--muted); } .reward b { color: var(--cyan); animation: pop .6s .3s both; } .reward b + b { color: var(--warn); }
 .results .edit-actions { justify-content: center; position: relative; }
 
+/* ===================== H2H TODOS OS JOGOS ===================== */
+.h2h-all-games-card {
+  margin-bottom: 24px;
+}
+.h2h-summary-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 20px;
+  border-radius: 18px;
+  background: linear-gradient(135deg, rgba(34, 211, 238, 0.12), rgba(167, 139, 250, 0.12));
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  margin-bottom: 18px;
+}
+.h2h-sb-lead {
+  flex: 1;
+}
+.h2h-badge-total {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(34, 211, 238, 0.2);
+  color: var(--cyan);
+  margin-bottom: 4px;
+}
+.h2h-lead-txt {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text);
+  margin: 0;
+}
+.h2h-sb-score {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: rgba(0, 0, 0, 0.25);
+  padding: 8px 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.h2h-score-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 44px;
+}
+.h2h-score-col .h2h-lbl {
+  font-size: 0.75rem;
+  color: var(--muted);
+  font-weight: 600;
+}
+.h2h-score-col .h2h-sub-lbl {
+  font-size: 0.68rem;
+  color: var(--muted);
+}
+.h2h-big-val {
+  font-size: 1.55rem;
+  font-family: var(--display);
+  font-weight: 800;
+  line-height: 1;
+  margin: 2px 0;
+}
+.h2h-big-val.win {
+  color: #34d399;
+  text-shadow: 0 0 10px rgba(52, 211, 153, 0.4);
+}
+.h2h-big-val.loss {
+  color: #fb7185;
+  text-shadow: 0 0 10px rgba(251, 113, 133, 0.4);
+}
+.h2h-score-sep {
+  font-size: 1.2rem;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.h2h-platform-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 14px;
+}
+.h2h-game-card {
+  border-radius: 18px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  transition: transform 0.2s, border-color 0.2s;
+}
+.h2h-game-card:hover {
+  transform: translateY(-2px);
+  border-color: hsla(var(--ghue, 200), 90%, 65%, 0.4);
+  box-shadow: 0 8px 24px hsla(var(--ghue, 200), 90%, 50%, 0.12);
+}
+.h2h-gc-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.h2h-gc-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.h2h-gc-ic {
+  font-size: 1.6rem;
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-content: center;
+  border-radius: 12px;
+  background: hsla(var(--ghue, 200), 80%, 60%, 0.15);
+  border: 1px solid hsla(var(--ghue, 200), 80%, 60%, 0.3);
+}
+.h2h-gc-score-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  background: rgba(0, 0, 0, 0.22);
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+.h2h-side {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.h2h-side-tag {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--muted);
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.h2h-num {
+  font-size: 1.4rem;
+  font-family: var(--display);
+  font-weight: 800;
+  line-height: 1.1;
+}
+.h2h-num.win {
+  color: #34d399;
+}
+.h2h-num.loss {
+  color: #fb7185;
+}
+.h2h-vs-sign {
+  font-size: 0.8rem;
+  color: var(--muted);
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.h2h-bar-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.h2h-bar-track {
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  display: flex;
+  overflow: hidden;
+}
+.h2h-bar-fill.me {
+  background: linear-gradient(90deg, #10b981, #34d399);
+}
+.h2h-bar-fill.draw {
+  background: #94a3b8;
+}
+.h2h-bar-fill.them {
+  background: linear-gradient(90deg, #f43f5e, #fb7185);
+}
+.h2h-bar-legend {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.68rem;
+  color: var(--muted);
+}
+.h2h-gc-footer {
+  margin-top: auto;
+  padding-top: 4px;
+}
+.h2h-gc-footer .btn {
+  width: 100%;
+  justify-content: center;
+}
+
+/* ===================== CONFRONTOS NO PERFIL PRÓPRIO ===================== */
+.self-h2h-friends-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
+}
+.self-h2h-friend-card {
+  padding: 16px;
+  border-radius: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  transition: transform 0.2s, border-color 0.2s;
+}
+.self-h2h-friend-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(34, 211, 238, 0.35);
+}
+.shf-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.shf-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.shf-info b {
+  font-size: 0.95rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.shf-score-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.shf-pill {
+  flex: 1;
+  text-align: center;
+  font-size: 0.78rem;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+.shf-pill.win b {
+  color: #34d399;
+}
+.shf-pill.loss b {
+  color: #fb7185;
+}
+.shf-pill.draw b {
+  color: #94a3b8;
+}
+
+/* Modal Perfil Amigo em amigos.html */
+.modal-fpm {
+  width: min(680px, 95vw);
+  max-height: 90vh;
+  overflow-y: auto;
+}
+.fpm-head {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.04);
+}
+.fpm-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.fpm-title {
+  font-size: 1.4rem;
+  margin: 0;
+}
+.fpm-bio {
+  font-size: 0.88rem;
+  color: #cbd5e1;
+  margin: 4px 0 0;
+  font-style: italic;
+}
+
 /* ---------- Responsivo ---------- */
 @media (max-width: 860px) {
   .cols, .lobby-grid { grid-template-columns: 1fr; }

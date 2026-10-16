@@ -44,7 +44,7 @@
         try { session = (await this.sb.auth.getSession()).data.session; } catch { /* offline */ }
         if (session) {
           this.user = cached && cached.id === session.user.id ? cached : null;
-          if (navigator.onLine) await this.refreshProfile(session.user.id).catch(() => {});
+          if (navigator.onLine) await this.refreshProfile(session.user.id).catch(() => { });
         } else if (cached && isLoggedIn && !navigator.onLine) {
           this.user = cached; // offline: usa a conta em cache
         }
@@ -206,11 +206,35 @@
 
     /* ============ Perfis ============ */
     async getProfile(idOrName) {
-      const isId = /^[0-9a-f-]{36}$/i.test(idOrName);
-      return this.cached('p.' + idOrName, async () => {
+      if (!idOrName) throw new Error('Perfil não encontrado.');
+      const clean = idOrName.toString().trim();
+      const cleanLower = clean.toLowerCase();
+      const cleanNoPrefix = cleanLower.replace(/^usr_/, '');
+
+      if (!this.canNet) {
+        const accounts = LS.get('accounts', {});
+        // Procurar estritamente nas contas existentes guardadas no dispositivo
+        const found = Object.values(accounts).find((a) => {
+          const aid = (a.id || '').toLowerCase();
+          const au = (a.username || '').toLowerCase();
+          return aid === cleanLower || au === cleanLower || au === cleanNoPrefix || (a.id && a.id.replace(/^usr_/, '').toLowerCase() === cleanNoPrefix);
+        });
+        if (found) {
+          return { data: found, stale: false };
+        }
+        const me = this.me();
+        if (me && ((me.id && me.id.toLowerCase() === cleanLower) || (me.username && me.username.toLowerCase() === cleanLower))) {
+          return { data: me, stale: false };
+        }
+        throw new Error('Perfil não encontrado.');
+      }
+
+      const isId = /^[0-9a-f-]{36}$/i.test(clean);
+      return this.cached('p.' + clean, async () => {
         const q = this.sb.from('profiles').select('id,username,display_name,avatar,color,bio,xp,coins,created_at');
-        const { data, error } = await (isId ? q.eq('id', idOrName) : q.eq('username', idOrName.toLowerCase())).single();
+        const { data, error } = await (isId ? q.eq('id', clean) : q.ilike('username', cleanNoPrefix)).maybeSingle();
         if (error) throw error;
+        if (!data) throw new Error('Perfil não encontrado.');
         return data;
       });
     },
@@ -234,7 +258,7 @@
 
       if (!this.canNet) {
         const accounts = LS.get('accounts', {});
-        // 1. Procurar nas contas guardadas no dispositivo
+        // Procurar estritamente nas contas registadas que existem no dispositivo
         Object.values(accounts).forEach((a) => {
           const aid = a.id || a.username;
           const au = (a.username || '').toLowerCase();
@@ -255,45 +279,11 @@
           }
         });
 
-        // 2. Verificar amizades ou pedidos locais existentes
-        const rows = LS.get('local_friendships', []);
-        rows.forEach((r) => {
-          const other = r.requester === meId ? r.addressee : (r.addressee === meId ? r.requester : null);
-          if (other && !seen.has(other)) {
-            const uclean = other.replace(/^usr_/, '');
-            if (norm(uclean).includes(cleanTarget)) {
-              seen.add(other);
-              seen.add(uclean);
-              results.push({
-                id: other,
-                username: uclean,
-                display_name: uclean.charAt(0).toUpperCase() + uclean.slice(1),
-                avatar: '👤',
-                color: 180,
-                xp: 0
-              });
-            }
-          }
-        });
-
-        // 3. Se digitou um username válido e não existe nos resultados, dá opção de envio direto
-        if (cleanUname && cleanUname.length >= 2 && !seen.has(cleanUname)) {
-          const hue = Math.abs(cleanUname.split('').reduce((acc, c) => acc + c.charCodeAt(0) * 19, 0)) % 360;
-          results.push({
-            id: 'usr_' + cleanUname,
-            username: cleanUname,
-            display_name: cleanUname.charAt(0).toUpperCase() + cleanUname.slice(1),
-            avatar: '👤',
-            color: hue,
-            xp: 0,
-            isDirect: true
-          });
-        }
-
+        // O perfil só aparece se o perfil existir (sem cartões virtuais)
         return results.slice(0, 10);
       }
 
-      // Se com ligação ao Supabase
+      // Se com ligação ao Supabase: apenas perfis reais existentes na base de dados
       try {
         const { data, error } = await this.sb.from('profiles')
           .select('id,username,display_name,avatar,color,xp')
@@ -301,19 +291,7 @@
           .neq('id', this.user.id)
           .limit(10);
         if (error) throw error;
-        const res = data || [];
-        if (cleanUname && cleanUname.length >= 2 && !res.some((p) => (p.username || '').toLowerCase() === cleanUname)) {
-          res.push({
-            id: 'usr_' + cleanUname,
-            username: cleanUname,
-            display_name: cleanUname.charAt(0).toUpperCase() + cleanUname.slice(1),
-            avatar: '👤',
-            color: 180,
-            xp: 0,
-            isDirect: true
-          });
-        }
-        return res;
+        return data || [];
       } catch {
         return [];
       }
@@ -570,7 +548,7 @@
           const isMine = r.requester === myId || rReq === myUname;
           const isTheirs = r.addressee === myId || rAdd === myUname;
           return (isMine && (r.addressee === otherId || rAdd === cleanOther)) ||
-                 (isTheirs && (r.requester === otherId || rReq === cleanOther));
+            (isTheirs && (r.requester === otherId || rReq === cleanOther));
         });
         if (exists) throw new Error('Já existe um pedido ou amizade com este jogador.');
         rows.push({
@@ -622,21 +600,104 @@
       if (error) throw error;
     },
 
+    /* ============ Plataforma & Jogos ============ */
+    PLATFORM_GAMES: [
+      { id: 'mexicana', name: 'Mexicana', icon: '🃏', hue: 28, link: 'mexicana.html' },
+      { id: 'connect4', name: '4 em Linha', icon: '🔴', hue: 345, link: 'index.html#game/connect4' },
+      { id: 'reflex', name: 'Reflexo Rápido', icon: '⚡', hue: 45, link: 'index.html#game/reflex' }
+    ],
+
     /* ============ Estatísticas ============ */
     async getAllH2H() {
+      if (!this.canNet) {
+        const fr = await this.getFriends();
+        const friends = fr.data.friends || [];
+        const result = [];
+        for (const f of friends) {
+          const fid = f.profile.id || f.profile.username;
+          const h = await this.getH2H(fid);
+          (h.data || []).forEach((r) => {
+            result.push({ friend_id: f.profile.id, ...r });
+          });
+        }
+        return { data: result, stale: false };
+      }
       return this.cached('h2h', async () => {
         const { data, error } = await this.sb.rpc('friends_head_to_head');
         if (error) throw error;
-        return data;
+        return data || [];
       });
     },
+
     async getH2H(other) {
-      return this.cached('h2h.' + other, async () => {
-        const { data, error } = await this.sb.rpc('head_to_head', { p_user: this.user.id, p_other: other });
+      const ALL_GAMES = this.PLATFORM_GAMES;
+      const me = this.me();
+      const meId = me ? (me.id || me.username) : null;
+      const myUname = (me?.username || '').toLowerCase();
+      const otherClean = (other || '').toString().replace(/^usr_/, '').toLowerCase();
+
+      if (!this.canNet) {
+        const myHist = (this.user && this.user.history) ? this.user.history : (this.guest ? this.guest.history : []);
+        const localMatches = LS.get('local_matches', []);
+        const allMatches = [...myHist, ...localMatches];
+
+        const gameMap = {};
+        ALL_GAMES.forEach((g) => {
+          gameMap[g.id] = { game_id: g.id, name: g.name, icon: g.icon, hue: g.hue, link: g.link, wins: 0, losses: 0, draws: 0, played: 0 };
+        });
+
+        allMatches.forEach((m) => {
+          if (!m.players || !m.players.length) return;
+          const gid = m.game_id || m.game;
+          if (!gameMap[gid]) {
+            gameMap[gid] = { game_id: gid, name: gid, icon: '🎮', hue: 200, link: '#', wins: 0, losses: 0, draws: 0, played: 0 };
+          }
+          const pMe = m.players.find((p) => p.user_id === meId || (p.name && p.name.toLowerCase() === myUname) || (p.username && p.username.toLowerCase() === myUname));
+          const pOther = m.players.find((p) => p.user_id === other || (p.name && p.name.toLowerCase() === otherClean) || (p.username && p.username.toLowerCase() === otherClean));
+
+          if (pMe && pOther) {
+            gameMap[gid].played++;
+            if (pMe.result === 'win' || pOther.result === 'loss') gameMap[gid].wins++;
+            else if (pMe.result === 'loss' || pOther.result === 'win') gameMap[gid].losses++;
+            else gameMap[gid].draws++;
+          }
+        });
+
+        return { data: ALL_GAMES.map((g) => gameMap[g.id]), stale: false };
+      }
+
+      // Supabase
+      try {
+        let otherUuid = other;
+        if (!/^[0-9a-f-]{36}$/i.test(other)) {
+          const { data: p } = await this.sb.from('profiles').select('id').ilike('username', otherClean).maybeSingle();
+          if (p) otherUuid = p.id;
+        }
+
+        const { data: rows, error } = await this.sb.rpc('head_to_head', { p_user: this.user.id, p_other: otherUuid });
         if (error) throw error;
-        return data;
-      });
+
+        const map = Object.fromEntries((rows || []).map((r) => [r.game_id, r]));
+        const full = ALL_GAMES.map((g) => {
+          const found = map[g.id];
+          return {
+            game_id: g.id,
+            name: g.name,
+            icon: g.icon,
+            hue: g.hue,
+            link: g.link,
+            wins: found ? found.wins : 0,
+            losses: found ? found.losses : 0,
+            draws: found ? found.draws : 0,
+            played: found ? (found.wins + found.losses + found.draws) : 0
+          };
+        });
+        return { data: full, stale: false };
+      } catch {
+        return { data: ALL_GAMES.map((g) => ({ game_id: g.id, name: g.name, icon: g.icon, hue: g.hue, link: g.link, wins: 0, losses: 0, draws: 0, played: 0 })), stale: true };
+      }
     },
+
     async getUserStats(id) {
       if (!id || (this.user && this.user.id === id && !this.canNet)) {
         const hist = (this.user && this.user.id === id) ? (this.user.history || []) : (this.guest.history || []);
@@ -685,9 +746,17 @@
       if (!this.user) { // convidado: tudo local
         const g = this.guest, rw = REWARD[r0.result] || REWARD.loss;
         g.xp += rw.xp; g.coins += rw.coins;
-        g.history = [{ game_id: rec.game, mode: rec.mode, duration_s: rec.duration, played_at: new Date().toISOString(),
-          result: r0.result, score: r0.score, xp_gain: rw.xp, players: rec.players }, ...(g.history || [])].slice(0, 50);
-        LS.set('guest', g); this.emit('profile');
+        g.history = [{
+          game_id: rec.game, mode: rec.mode, duration_s: rec.duration, played_at: new Date().toISOString(),
+          result: r0.result, score: r0.score, xp_gain: rw.xp, players: rec.players
+        }, ...(g.history || [])].slice(0, 50);
+        LS.set('guest', g);
+        const lm = LS.get('local_matches', []);
+        lm.unshift({
+          game_id: rec.game, mode: rec.mode, duration_s: rec.duration, played_at: new Date().toISOString(), players: rec.players
+        });
+        LS.set('local_matches', lm.slice(0, 100));
+        this.emit('profile');
         return;
       }
       const mine = rec.players.find((p) => p.user_id === this.user.id) || rec.players[0];
@@ -705,6 +774,11 @@
         accounts[this.user.username] = this.user;
         LS.set('accounts', accounts);
       }
+      const lm = LS.get('local_matches', []);
+      lm.unshift({
+        game_id: rec.game, mode: rec.mode, duration_s: rec.duration, played_at: new Date().toISOString(), players: rec.players
+      });
+      LS.set('local_matches', lm.slice(0, 100));
       this.emit('profile');
       if (this.canNet) await this._send(rec);
     },
@@ -719,7 +793,7 @@
         console.warn('submit_match falhou:', error.message);
         return;
       }
-      this.refreshProfile().catch(() => {});
+      this.refreshProfile().catch(() => { });
     },
     _enqueue(rec) {
       const q = LS.get('queue', []);
@@ -741,7 +815,7 @@
       }
       LS.set('queue', rest);
       this.emit('queue', rest.length);
-      this.refreshProfile().catch(() => {});
+      this.refreshProfile().catch(() => { });
     },
 
     /* ============ Hub realtime: presença + convites ============ */
@@ -765,8 +839,10 @@
     sendInvite(toId, room, game) {
       if (!this.hub) return;
       const me = this.user;
-      this.hub.send({ type: 'broadcast', event: 'invite',
-        payload: { to: toId, room, game, from: { id: me.id, username: me.username, display_name: me.display_name } } });
+      this.hub.send({
+        type: 'broadcast', event: 'invite',
+        payload: { to: toId, room, game, from: { id: me.id, username: me.username, display_name: me.display_name } }
+      });
     },
 
     newKey() { return uid(16); }

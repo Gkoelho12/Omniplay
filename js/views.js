@@ -277,17 +277,13 @@
         } else if (outMap.has(u.id) || outMap.has(u.username) || (u.id && outMap.has(u.id.replace(/^usr_/, '')))) {
           const fid = outMap.get(u.id) || outMap.get(u.username) || outMap.get(u.id.replace(/^usr_/, ''));
           actionHtml = `<span class="chip">Pedido enviado ⏳</span><button class="btn btn-sm btn-ghost danger" data-act="cancel" data-fid="${fid}">Cancelar</button>`;
-        } else if (u.isDirect) {
-          actionHtml = `<button class="btn btn-sm btn-neon" data-act="add" data-id="${u.id}" data-name="@${esc(u.username)}">➕ Enviar Pedido a @${esc(u.username)}</button>`;
         } else {
           actionHtml = `<button class="btn btn-sm btn-neon" data-act="add" data-id="${u.id}" data-name="${esc(u.display_name)}">➕ Adicionar Amigo</button>`;
         }
 
-        const subtitle = u.isDirect
-          ? `Enviar pedido direto de amizade para este username`
-          : `@${esc(u.username)} · Nv ${levelInfo(u.xp).level}`;
+        const subtitle = `@${esc(u.username)} · Nv ${levelInfo(u.xp).level}`;
 
-        return `<div class="user-search-row glass ${u.isDirect ? 'direct-invite-row' : ''}" data-id="${u.id}">
+        return `<div class="user-search-row glass" data-id="${u.id}">
           <div class="usr-avatar">${avatar(u, 44)}</div>
           <div class="usr-info">
             <b>${esc(u.display_name || '@' + u.username)}</b>
@@ -411,15 +407,15 @@
               <h3 class="sec-title">👥 Amigos de Amigos</h3>
               <p class="muted small mb-12">Jogadores conectados aos teus amigos no OmniPlay.</p>
               <div class="suggest-grid">${filteredSug.map((u) => {
-                let btnHtml = '';
-                if (outMap.has(u.id)) {
-                  btnHtml = `<span class="chip w-full center">Pedido enviado ⏳</span>`;
-                } else if (incMap.has(u.id)) {
-                  btnHtml = `<button class="btn btn-sm btn-neon w-full" data-act="sug-accept" data-fid="${incMap.get(u.id)}">Aceitar 🎉</button>`;
-                } else {
-                  btnHtml = `<button class="btn btn-sm btn-neon w-full" data-act="sug-add" data-id="${u.id}" data-name="${esc(u.display_name)}">➕ Adicionar</button>`;
-                }
-                return `
+            let btnHtml = '';
+            if (outMap.has(u.id)) {
+              btnHtml = `<span class="chip w-full center">Pedido enviado ⏳</span>`;
+            } else if (incMap.has(u.id)) {
+              btnHtml = `<button class="btn btn-sm btn-neon w-full" data-act="sug-accept" data-fid="${incMap.get(u.id)}">Aceitar 🎉</button>`;
+            } else {
+              btnHtml = `<button class="btn btn-sm btn-neon w-full" data-act="sug-add" data-id="${u.id}" data-name="${esc(u.display_name)}">➕ Adicionar</button>`;
+            }
+            return `
                   <div class="suggest-card glass">
                     <div class="sug-top">
                       ${avatar(u, 48)}
@@ -431,7 +427,7 @@
                     </div>
                     ${btnHtml}
                   </div>`;
-              }).join('')}</div>
+          }).join('')}</div>
             </div>`;
           $$('[data-act=sug-add]', suggestBox).forEach((b) => (b.onclick = async () => {
             b.disabled = true;
@@ -571,24 +567,158 @@
     </article>`;
   }
 
+  /* ===================== RENDER H2H TODOS OS JOGOS ===================== */
+  function renderAllGamesH2H(games, otherName, otherUsername) {
+    if (!games || !games.length) {
+      return `<div class="empty-search muted small">Sem dados de confrontos para apresentar.</div>`;
+    }
+    const totWins = games.reduce((a, g) => a + (g.wins || 0), 0);
+    const totLosses = games.reduce((a, g) => a + (g.losses || 0), 0);
+    const totDraws = games.reduce((a, g) => a + (g.draws || 0), 0);
+    const totPlayed = games.reduce((a, g) => a + (g.played || 0), 0);
+
+    let leadText = '';
+    if (totPlayed === 0) {
+      leadText = `Ainda não disputaram nenhuma partida um contra o outro. Desafia o ${esc(otherName)} abaixo!`;
+    } else if (totWins > totLosses) {
+      leadText = `🏆 Estás em vantagem geral no confronto direto (+${totWins - totLosses} vitória${totWins - totLosses === 1 ? '' : 's'})!`;
+    } else if (totWins < totLosses) {
+      leadText = `⚠️ O ${esc(otherName)} está em vantagem no confronto direto (+${totLosses - totWins} vitória${totLosses - totWins === 1 ? '' : 's'}). Hora da desforra!`;
+    } else {
+      leadText = `🤝 Estão rigorosamente empatados no confronto geral!`;
+    }
+
+    return `
+      <div class="h2h-summary-banner glass">
+        <div class="h2h-sb-lead">
+          <span class="h2h-badge-total">Todos os Jogos (${totPlayed} partida${totPlayed === 1 ? '' : 's'})</span>
+          <p class="h2h-lead-txt">${leadText}</p>
+        </div>
+        <div class="h2h-sb-score">
+          <div class="h2h-score-col me">
+            <span class="h2h-lbl">Tu</span>
+            <b class="h2h-big-val win">${totWins}</b>
+            <span class="h2h-sub-lbl">vitórias</span>
+          </div>
+          <div class="h2h-score-sep">×</div>
+          <div class="h2h-score-col them">
+            <span class="h2h-lbl">${esc(otherName)}</span>
+            <b class="h2h-big-val loss">${totLosses}</b>
+            <span class="h2h-sub-lbl">vitórias</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="h2h-platform-grid">
+        ${games.map((g) => {
+          const played = g.played || 0;
+          const wPct = played ? Math.round((g.wins / played) * 100) : 0;
+          const lPct = played ? Math.round((g.losses / played) * 100) : 0;
+          const dPct = played ? Math.max(0, 100 - wPct - lPct) : 0;
+
+          let statusBadge = '';
+          if (played === 0) {
+            statusBadge = '<span class="chip mini muted">Por estrear</span>';
+          } else if (g.wins > g.losses) {
+            statusBadge = '<span class="chip mini good">À frente 🏆</span>';
+          } else if (g.wins < g.losses) {
+            statusBadge = '<span class="chip mini danger">Atrás ⚔️</span>';
+          } else {
+            statusBadge = '<span class="chip mini">Empatados 🤝</span>';
+          }
+
+          let playAction = '';
+          if (g.id === 'mexicana') {
+            playAction = `<a href="mexicana.html?invite=${encodeURIComponent(otherUsername || '')}" class="btn btn-sm btn-neon">🃏 Desafiar Mexicana</a>`;
+          } else if (g.id === 'connect4') {
+            playAction = `<a href="#game/connect4" class="btn btn-sm btn-ghost">🔴 Jogar 4 em Linha</a>`;
+          } else {
+            playAction = `<a href="#game/reflex" class="btn btn-sm btn-ghost">⚡ Jogar Reflexo</a>`;
+          }
+
+          return `
+            <div class="h2h-game-card glass" style="--ghue:${g.hue || 200}">
+              <div class="h2h-gc-top">
+                <div class="h2h-gc-title">
+                  <span class="h2h-gc-ic">${g.icon}</span>
+                  <div>
+                    <b>${esc(g.name)}</b>
+                    <small class="muted">${played === 0 ? 'Nenhum jogo disputado' : `${played} jogo${played === 1 ? '' : 's'}`}</small>
+                  </div>
+                </div>
+                ${statusBadge}
+              </div>
+
+              <div class="h2h-gc-score-row">
+                <div class="h2h-side me">
+                  <span class="h2h-side-tag">Tu</span>
+                  <span class="h2h-num win">${g.wins}</span>
+                  <small class="muted">vitórias</small>
+                </div>
+                <div class="h2h-vs-sign">vs</div>
+                <div class="h2h-side them">
+                  <span class="h2h-side-tag">${esc(otherName)}</span>
+                  <span class="h2h-num loss">${g.losses}</span>
+                  <small class="muted">vitórias</small>
+                </div>
+              </div>
+
+              <div class="h2h-bar-wrap" title="${g.wins}V - ${g.losses}D - ${g.draws || 0}E">
+                <div class="h2h-bar-track">
+                  <div class="h2h-bar-fill me" style="width:${wPct}%"></div>
+                  <div class="h2h-bar-fill draw" style="width:${dPct}%"></div>
+                  <div class="h2h-bar-fill them" style="width:${lPct}%"></div>
+                </div>
+                <div class="h2h-bar-legend">
+                  <span>${wPct}% teu</span>
+                  ${g.draws > 0 ? `<small class="muted">${g.draws} empates</small>` : ''}
+                  <span>${lPct}% adversário</span>
+                </div>
+              </div>
+
+              <div class="h2h-gc-footer">
+                ${playAction}
+              </div>
+            </div>`;
+        }).join('')}
+      </div>`;
+  }
+
   /* ===================== PERFIL ===================== */
   O.views.profile = {
     async render(root, params) {
-      const self = params.self || (B.user && (params.id === B.user.id));
+      const self = params.self || (B.user && (params.id === B.user.id || (B.user.username && params.username === B.user.username)));
       root.innerHTML = `<section class="page">${loading()}</section>`;
       const page = root.firstElementChild;
       let prof, st = false;
+
       try {
-        if (self) prof = B.me();
-        else {
-          if (!B.account) { page.innerHTML = empty('🔒', 'Entra para ver perfis', 'Os perfis de outros jogadores estão disponíveis na tua conta.', '<button class="btn btn-neon" id="pf-login">Entrar</button>'); $('#pf-login').onclick = () => O.app.openAuth(); return; }
-          const r = await B.getProfile(params.id || params.username); prof = r.data; st = r.stale;
+        if (self) {
+          prof = B.me();
+          if (!prof) throw new Error('Perfil não encontrado.');
+        } else {
+          const target = params.id || params.username;
+          if (!target) throw new Error('Perfil não encontrado.');
+          const r = await B.getProfile(target);
+          if (!r || !r.data) throw new Error('Perfil não encontrado.');
+          prof = r.data;
+          st = r.stale;
         }
       } catch (e) {
-        page.innerHTML = empty('🌌', 'Jogador não encontrado', 'Não conseguimos carregar este perfil.');
+        page.innerHTML = `
+          <div class="empty glass pad text-center" style="max-width:560px;margin:40px auto;text-align:center;">
+            <div class="empty-ic" style="font-size:3.5rem;margin-bottom:12px;">👤</div>
+            <h3 style="margin-bottom:8px;">Perfil não encontrado</h3>
+            <p class="muted" style="margin-bottom:20px;">Este utilizador não existe ou ainda não criou conta no OmniPlay.</p>
+            <button class="btn btn-neon" id="pf-back-btn">⬅️ Voltar aos Amigos</button>
+          </div>`;
+        const b = $('#pf-back-btn', page);
+        if (b) b.onclick = () => O.app.nav('friends');
         return;
       }
-      const id = prof.id, li = levelInfo(prof.xp), fr = frameFor(prof.xp);
+
+      const id = prof.id || prof.username, li = levelInfo(prof.xp), fr = frameFor(prof.xp);
+
       page.innerHTML = `
         <div class="profile-head glass">
           <div class="ph-avatar">${avatar(prof, 112)}</div>
@@ -597,16 +727,34 @@
             <p class="muted">@${esc(prof.username)}${prof.created_at ? ' · membro desde ' + new Date(prof.created_at).toLocaleDateString('pt-PT', { month: 'long', year: 'numeric' }) : ''}</p>
             ${prof.bio ? `<p class="bio">${esc(prof.bio)}</p>` : ''}
             <div class="xp-line"><b>Nível ${li.level}</b><div class="xp-bar"><i style="width:${li.pct}%"></i></div><span>${li.cur} / ${li.need} XP</span></div>
-            <div class="chips"><span class="chip">⭐ ${prof.xp} XP total</span><span class="chip">🪙 ${prof.coins} moedas</span><span class="chip">🖼️ ${esc(fr.name)}</span></div>
+            <div class="chips"><span class="chip">⭐ ${prof.xp} XP total</span><span class="chip">🪙 ${prof.coins || 0} moedas</span><span class="chip">🖼️ ${esc(fr.name)}</span></div>
             <div class="ph-actions" id="ph-actions"></div>
           </div>
         </div>
         ${stale(st)}
         <div class="cols">
           <div class="col-main">
-            <h3 class="sec">Estatísticas por jogo</h3><div id="pf-stats">${loading()}</div>
-            ${!self ? `<h3 class="sec">Tu × ${esc(prof.display_name)}</h3><div id="pf-h2h" class="glass pad">${loading()}</div>` : ''}
-            <h3 class="sec">Histórico de partidas</h3><div id="pf-hist">${loading()}</div>
+            ${!self ? `
+              <div class="section-card glass pad mb-24">
+                <div class="sec-head">
+                  <h3 class="sec-title">⚔️ Confronto Direto vs ${esc(prof.display_name)} (Todos os Jogos)</h3>
+                  <p class="muted small">Vê quantas vezes ganhaste e perdeste contra o teu amigo em cada um dos jogos da plataforma.</p>
+                </div>
+                <div id="pf-all-h2h">${loading()}</div>
+              </div>` : `
+              <div class="section-card glass pad mb-24">
+                <div class="sec-head">
+                  <h3 class="sec-title">👥 Confrontos Diretos com os Teus Amigos (Todos os Jogos)</h3>
+                  <p class="muted small">O teu registo de vitórias e derrotas contra cada um dos teus amigos na plataforma.</p>
+                </div>
+                <div id="pf-friends-h2h">${loading()}</div>
+              </div>`}
+
+            <h3 class="sec">Estatísticas Gerais na Plataforma</h3>
+            <div id="pf-stats">${loading()}</div>
+
+            <h3 class="sec">Histórico de partidas</h3>
+            <div id="pf-hist">${loading()}</div>
           </div>
           <aside class="col-side">
             <h3 class="sec">Molduras de avatar</h3>
@@ -618,7 +766,7 @@
           </aside>
         </div>`;
 
-      // ações
+      // ações de topo
       const ac = $('#ph-actions');
       if (self) {
         ac.innerHTML = `<button class="btn btn-ghost btn-sm" id="pf-edit">✏️ Editar perfil</button>` +
@@ -626,11 +774,78 @@
         $('#pf-edit').onclick = () => editProfile();
         if (B.account) $('#pf-out').onclick = async () => { await B.signOut(); toast('Sessão terminada.'); };
         else $('#pf-in').onclick = () => O.app.openAuth();
-      } else if (B.canNet) {
+      } else {
         relationButtons(ac, id, prof);
       }
 
-      // dados
+      // H2H Todos os Jogos
+      if (!self) {
+        try {
+          const { data: h2hData } = await B.getH2H(id);
+          const t = $('#pf-all-h2h');
+          if (t) t.innerHTML = renderAllGamesH2H(h2hData, prof.display_name, prof.username);
+        } catch {
+          const t = $('#pf-all-h2h');
+          if (t) t.innerHTML = '<p class="muted small">Sem dados de confrontos diretos disponíveis.</p>';
+        }
+      } else {
+        try {
+          const [{ data: frData }, h2hRes] = await Promise.all([
+            B.getFriends(),
+            B.getAllH2H().catch(() => ({ data: [] }))
+          ]);
+          const friends = frData.friends || [];
+          const box = $('#pf-friends-h2h');
+          if (box) {
+            if (!friends.length) {
+              box.innerHTML = `
+                <div class="empty-search muted small">
+                  Ainda não tens amigos adicionados. <button class="btn btn-sm btn-neon ml-8" id="btn-self-add-fr">➕ Adicionar Amigos</button>
+                </div>`;
+              $('#btn-self-add-fr', box)?.addEventListener('click', () => O.app.nav('friends'));
+            } else {
+              const byFriend = {};
+              (h2hRes.data || []).forEach((r) => {
+                const k = r.friend_id || r.other;
+                if (k) (byFriend[k] = byFriend[k] || []).push(r);
+              });
+              box.innerHTML = `
+                <div class="self-h2h-friends-grid">
+                  ${friends.map((f) => {
+                    const fid = f.profile.id || f.profile.username;
+                    const frows = byFriend[fid] || byFriend[f.profile.username] || [];
+                    const tw = frows.reduce((a, r) => a + (r.wins || 0), 0);
+                    const tl = frows.reduce((a, r) => a + (r.losses || 0), 0);
+                    const td = frows.reduce((a, r) => a + (r.draws || 0), 0);
+                    const tp = tw + tl + td;
+                    return `
+                      <div class="self-h2h-friend-card glass" data-fid="${fid}">
+                        <div class="shf-top">
+                          ${avatar(f.profile, 44)}
+                          <div class="shf-info">
+                            <b>${esc(f.profile.display_name)}</b>
+                            <small class="muted">@${esc(f.profile.username)}</small>
+                          </div>
+                        </div>
+                        <div class="shf-score-row">
+                          <span class="shf-pill win">Tu: <b>${tw}V</b></span>
+                          <span class="shf-pill loss">Amigo: <b>${tl}D</b></span>
+                          ${td > 0 ? `<span class="shf-pill draw"><b>${td}E</b></span>` : ''}
+                        </div>
+                        <button class="btn btn-sm btn-ghost w-full" data-goto-prof="${fid}">⚔️ Ver Todos os Jogos vs ${esc(f.profile.display_name)}</button>
+                      </div>`;
+                  }).join('')}
+                </div>`;
+              $$('[data-goto-prof]', box).forEach((b) => (b.onclick = () => goProfile({ id: b.dataset.gotoProf })));
+            }
+          }
+        } catch {
+          const box = $('#pf-friends-h2h');
+          if (box) box.innerHTML = '<p class="muted small">Sem dados de amigos.</p>';
+        }
+      }
+
+      // Estatísticas gerais por jogo
       try {
         const { data: stats } = await B.getUserStats(id);
         $('#pf-stats').innerHTML = stats.length ? `<div class="stat-grid">${stats.map((s) => `
@@ -641,10 +856,7 @@
           : empty('🎯', 'Sem partidas ainda', 'Joga para ver as estatísticas aqui.');
       } catch { $('#pf-stats').innerHTML = '<p class="muted">Sem dados offline.</p>'; }
 
-      if (!self) {
-        try { const { data } = await B.getH2H(id); const t = $('#pf-h2h'); if (t) t.innerHTML = h2hRows(data, 'Ainda não jogaram um contra o outro.'); }
-        catch { const t = $('#pf-h2h'); if (t) t.innerHTML = '<p class="muted">Sem dados offline.</p>'; }
-      }
+      // Histórico
       try {
         const { data: hist } = await B.getHistory(id);
         $('#pf-hist').innerHTML = hist.length ? `<div class="hist">${hist.map((h) => histRow(h, id)).join('')}</div>`
