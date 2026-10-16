@@ -1,5 +1,5 @@
 /* OmniPlay · service worker: guarda a app para funcionar 100% offline */
-const CACHE = 'omniplay-v5';
+const CACHE = 'omniplay-v6';
 const SHELL = [
   './', 'index.html', 'mexicana.html', 'style.css', 'manifest.webmanifest', 'assets/icon.svg',
   'js/config.js', 'js/util.js', 'js/backend.js', 'js/session.js', 'js/views.js', 'js/play.js', 'js/app.js', 'js/mexicana_page.js',

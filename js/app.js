@@ -289,7 +289,10 @@
             <p class="eyebrow">Multiverso de jogos</p>
             <h1>Todos os jogos.<br><span class="grad">Um só universo.</span></h1>
             <p class="lead">Joga online com amigos, ou no mesmo dispositivo. Sem internet? Também funciona.</p>
-            <button class="btn btn-roulette" id="roulette"><span class="dice">🎲</span><span>Roleta Omni</span></button>
+            <div class="hero-actions">
+              <button class="btn btn-roulette" id="roulette"><span class="dice">🎲</span><span>Roleta Omni</span></button>
+              <button class="btn btn-ghost" id="hero-btn-add-friends"><span>👥</span><span>Adicionar Amigos</span></button>
+            </div>
           </div>
           <div class="carousel" id="carousel" tabindex="0" aria-label="Jogos disponíveis">
             ${games.map((g, i) => `
@@ -319,6 +322,8 @@
       }));
       $$('#dots i').forEach((d) => d.addEventListener('click', () => { idx = +d.dataset.i; layout(); }));
       $('#roulette').onclick = () => O.play.roulette();
+      const heroAdd = $('#hero-btn-add-friends');
+      if (heroAdd) heroAdd.onclick = () => app.nav('friends', { tab: 'add' });
 
       let sx = null;
       car.addEventListener('pointerdown', (e) => { sx = e.clientX; });
@@ -434,7 +439,49 @@
 
     O.openAuth = app.openAuth;
 
-    app.nav('hub');
+    function handleRouteFromHash() {
+      const raw = location.hash.replace(/^#/, '');
+      if (!raw) return false;
+      const [route, queryStr] = raw.split('?');
+      const params = {};
+      if (queryStr) {
+        try {
+          const usp = new URLSearchParams(queryStr);
+          for (const [k, v] of usp.entries()) params[k] = v;
+        } catch { /* ignore */ }
+      }
+      if (route === 'add-friend' || route === 'add-friends') {
+        app.nav('friends', { tab: 'add', username: params.u || params.username || '' });
+        return true;
+      }
+      if (route === 'friends') {
+        app.nav('friends', params);
+        return true;
+      }
+      if (route === 'ranking') {
+        app.nav('ranking', params);
+        return true;
+      }
+      if (route === 'profile') {
+        app.nav('profile', params.id || params.u ? params : { self: true });
+        return true;
+      }
+      if (route === 'hub') {
+        app.nav('hub');
+        return true;
+      }
+      return false;
+    }
+
+    window.addEventListener('hashchange', () => {
+      if (O.play.inGame()) return;
+      handleRouteFromHash();
+    });
+
+    if (!handleRouteFromHash()) {
+      app.nav('hub');
+    }
+
     app.refreshBadge();
     setInterval(app.refreshBadge, 60000);
 

@@ -20,106 +20,531 @@
   }
   const goProfile = (u) => O.app.nav('profile', u);
 
-  /* ===================== AMIGOS ===================== */
+  /* ===================== AMIGOS & ADICIONAR ===================== */
   O.views.friends = {
-    async render(root) {
+    async render(root, params = {}) {
       if (!B.account) {
-        root.innerHTML = `<section class="page">${empty('🤝', 'Os amigos vivem na tua conta', 'Entra para adicionar amigos e ver quantas vezes ganhaste (ou perdeste) contra cada um em cada jogo.',
-          '<button class="btn btn-neon btn-lg" id="fr-login">Entrar / Criar conta</button>')}</section>`;
-        $('#fr-login').onclick = () => O.app.openAuth();
+        root.innerHTML = `<section class="page friends-page">
+          <div class="glass fr-guest-hero">
+            <div class="fgh-icon">🤝</div>
+            <h2>O Teu Círculo de Jogos no OmniPlay</h2>
+            <p class="muted">Adiciona amigos pelo username, partilha o teu link pessoal e compara vitórias e derrotas frente a frente no Mexicana e outros jogos.</p>
+            <div class="fgh-features">
+              <div class="fgh-feat"><span>🃏</span><b>Desafios Diretos</b><small>Convida amigos para salas privadas de Mexicana com 1 clique.</small></div>
+              <div class="fgh-feat"><span>⚔️</span><b>Histórico Frente a Frente</b><small>Vê quem é o verdadeiro campeão de cada jogo.</small></div>
+              <div class="fgh-feat"><span>🟢</span><b>Presença em Tempo Real</b><small>Sabe na hora quem está online para começar uma partida.</small></div>
+            </div>
+            <div class="fgh-actions">
+              <button class="btn btn-neon btn-lg" id="fr-guest-login">🔑 Entrar / Criar Conta Grátis</button>
+            </div>
+          </div>
+        </section>`;
+        $('#fr-guest-login').onclick = () => O.app.openAuth();
         return;
       }
-      root.innerHTML = `<section class="page">
-        <div class="page-head"><h2>Amigos</h2><p class="muted">Adiciona jogadores pelo username e compara resultados.</p></div>
-        <div class="glass add-box">
-          <label class="field"><span>Procurar jogador</span>
-          <input id="fr-q" placeholder="username…" maxlength="16" autocomplete="off"></label>
-          <div id="fr-results" class="search-results"></div>
+
+      const me = B.me();
+      const li = levelInfo(me.xp);
+      const hostUrl = `${location.origin}${location.pathname.replace(/\/$/, '')}`;
+      const inviteUrl = `${hostUrl}#add-friend?u=${encodeURIComponent(me.username)}`;
+      const initialTab = params.tab || ((params.u || params.username) ? 'add' : 'friends');
+
+      root.innerHTML = `<section class="page friends-page">
+        <div class="page-head friends-head">
+          <div>
+            <h2>Amigos & Conexões</h2>
+            <p class="muted">Encontra jogadores, partilha o teu link e desafia amigos para jogar Mexicana.</p>
+          </div>
+          <div class="friends-top-actions">
+            <button class="btn btn-sm btn-ghost" id="btn-quick-share">🔗 Partilhar o Meu Link</button>
+          </div>
         </div>
-        <div id="fr-body">${loading()}</div></section>`;
-      let tm;
-      $('#fr-q').addEventListener('input', (e) => { clearTimeout(tm); tm = setTimeout(() => search(e.target.value), 280); });
-      load();
+
+        <!-- Segmented Tab Switcher -->
+        <div class="friend-tabs-wrap">
+          <div class="friend-tabs glass">
+            <button class="tab-btn ${initialTab === 'friends' ? 'active' : ''}" data-tab="friends" id="tab-btn-friends">
+              <span>👥 Os Teus Amigos</span>
+              <span class="tab-badge" id="tab-fr-badge">0</span>
+            </button>
+            <button class="tab-btn ${initialTab === 'add' ? 'active' : ''}" data-tab="add" id="tab-btn-add">
+              <span>➕ Adicionar Amigo</span>
+              <span class="tab-badge pulse" id="tab-req-badge" hidden>0</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Conteúdo Aba: Os Teus Amigos -->
+        <div id="tab-content-friends" class="tab-pane ${initialTab === 'friends' ? 'active' : ''}">
+          <div class="friends-toolbar">
+            <div class="fr-filter-pills">
+              <button class="pill-btn active" data-filter="all" id="filter-all">Todos <small id="cnt-all">0</small></button>
+              <button class="pill-btn" data-filter="online" id="filter-online">🟢 Online <small id="cnt-online">0</small></button>
+            </div>
+            <div class="fr-tb-right">
+              <input type="text" id="fr-list-search" class="fr-mini-search" placeholder="Filtrar amigos..." autocomplete="off">
+              <button class="btn btn-sm btn-neon" id="btn-goto-add">➕ Adicionar Novo</button>
+            </div>
+          </div>
+          <div id="fr-friends-container">${loading()}</div>
+        </div>
+
+        <!-- Conteúdo Aba: Adicionar Amigos -->
+        <div id="tab-content-add" class="tab-pane ${initialTab === 'add' ? 'active' : ''}">
+          <!-- Cartão de Partilha Pessoal -->
+          <div class="share-card glass">
+            <div class="sc-left">
+              ${avatar(me, 58)}
+              <span class="sc-lvl">Nv ${li.level}</span>
+            </div>
+            <div class="sc-content">
+              <span class="sc-eyebrow">O TEU CARTÃO DE JOGADOR</span>
+              <div class="sc-title-row">
+                <h3>${esc(me.display_name || me.username)}</h3>
+                <span class="sc-tag">@${esc(me.username)}</span>
+              </div>
+              <div class="share-box">
+                <input type="text" readonly id="share-link-input" class="share-input" value="${inviteUrl}">
+                <button class="btn btn-sm btn-neon" id="btn-copy-invite" type="button">📋 Copiar Link</button>
+                ${navigator.share ? '<button class="btn btn-sm btn-ghost" id="btn-native-share" type="button">📲 Partilhar</button>' : ''}
+                <button class="btn btn-sm btn-ghost" id="btn-copy-uname" type="button">🏷️ Copiar @${esc(me.username)}</button>
+              </div>
+              <p class="muted small sc-hint">Partilha o teu link ou username com amigos para eles te adicionarem diretamente.</p>
+            </div>
+          </div>
+
+          <!-- Pesquisa de Jogadores em Tempo Real -->
+          <div class="add-search-section glass pad">
+            <div class="search-head">
+              <h3>🔍 Procurar Jogadores</h3>
+              <p class="muted small">Pesquisa qualquer jogador pelo username ou nome para enviar pedido de amizade.</p>
+            </div>
+            <div class="search-input-wrap">
+              <span class="search-ic">🔎</span>
+              <input id="fr-search-input" placeholder="Escreve um username (ex: alex, marco, catarina)..." maxlength="20" autocomplete="off" value="${esc(params.u || params.username || '')}">
+              <button type="button" id="fr-search-clear" class="search-clear-btn" hidden>×</button>
+            </div>
+            <div id="fr-search-results" class="search-results-box"></div>
+          </div>
+
+          <!-- Pedidos Recebidos Pendentes -->
+          <div id="fr-incoming-box" class="pending-section"></div>
+
+          <!-- Pedidos Enviados Pendentes -->
+          <div id="fr-outgoing-box" class="pending-section"></div>
+
+          <!-- Sugestões da Comunidade -->
+          <div id="fr-suggestions-box" class="suggest-section"></div>
+        </div>
+      </section>`;
+
+      // Wiring Tabs
+      const tabFriendsBtn = $('#tab-btn-friends');
+      const tabAddBtn = $('#tab-btn-add');
+      const paneFriends = $('#tab-content-friends');
+      const paneAdd = $('#tab-content-add');
+
+      function switchTab(t) {
+        tabFriendsBtn.classList.toggle('active', t === 'friends');
+        tabAddBtn.classList.toggle('active', t === 'add');
+        paneFriends.classList.toggle('active', t === 'friends');
+        paneAdd.classList.toggle('active', t === 'add');
+      }
+
+      tabFriendsBtn.onclick = () => switchTab('friends');
+      tabAddBtn.onclick = () => switchTab('add');
+      $('#btn-goto-add').onclick = () => switchTab('add');
+      $('#btn-quick-share').onclick = () => { switchTab('add'); $('#btn-copy-invite').click(); };
+
+      // Copiar Link & Partilha
+      const copyBtn = $('#btn-copy-invite');
+      if (copyBtn) {
+        copyBtn.onclick = async () => {
+          try {
+            await navigator.clipboard.writeText(inviteUrl);
+            copyBtn.textContent = 'Copiado! ✓';
+            toast('Link de convite copiado para a área de transferência! 🎉', { type: 'good' });
+            setTimeout(() => { if (copyBtn) copyBtn.textContent = '📋 Copiar Link'; }, 2500);
+          } catch {
+            const inp = $('#share-link-input');
+            if (inp) { inp.select(); document.execCommand('copy'); toast('Link copiado!', { type: 'good' }); }
+          }
+        };
+      }
+      const copyUnameBtn = $('#btn-copy-uname');
+      if (copyUnameBtn) {
+        copyUnameBtn.onclick = async () => {
+          try {
+            await navigator.clipboard.writeText(me.username);
+            toast(`Username @${me.username} copiado!`, { type: 'good' });
+          } catch { /* ignore */ }
+        };
+      }
+      const natShareBtn = $('#btn-native-share');
+      if (natShareBtn) {
+        natShareBtn.onclick = async () => {
+          try {
+            await navigator.share({
+              title: 'Joga comigo no OmniPlay!',
+              text: `Adiciona-me no OmniPlay (@${me.username}) para jogarmos Mexicana e outros jogos multiplayer!`,
+              url: inviteUrl
+            });
+          } catch { /* user cancel */ }
+        };
+      }
+
+      // Search wiring
+      const searchInp = $('#fr-search-input');
+      const clearBtn = $('#fr-search-clear');
+      let searchTm;
+
+      const doSearch = (val) => {
+        clearBtn.hidden = !val.trim();
+        clearTimeout(searchTm);
+        searchTm = setTimeout(() => execSearch(val), 220);
+      };
+
+      searchInp.addEventListener('input', (e) => doSearch(e.target.value));
+      clearBtn.onclick = () => { searchInp.value = ''; searchInp.focus(); doSearch(''); };
+
+      // Se passou username por parâmetro, pesquisa automaticamente
+      if (params.u || params.username) {
+        doSearch(params.u || params.username);
+      }
+
+      loadData();
     }
   };
 
-  // atualiza só as bolinhas online/offline (sem voltar a pedir dados)
+  // Atualização em tempo real de presença
   B.on('presence', () => {
     if (O.app.current !== 'friends') return;
-    $$('.friend-card .fc-top').forEach((t) => {
-      const d = t.querySelector('.dot'), on = B.onlineIds.has(t.dataset.pid);
-      if (d) { d.classList.toggle('on', on); d.title = on ? 'Online' : 'Offline'; }
+    $$('.friend-card').forEach((card) => {
+      const pid = card.dataset.pid;
+      const on = B.onlineIds.has(pid);
+      const dot = card.querySelector('.fc-dot');
+      const label = card.querySelector('.fc-status-txt');
+      if (dot) {
+        dot.classList.toggle('on', on);
+        dot.title = on ? 'Online' : 'Offline';
+      }
+      if (label) label.textContent = on ? 'Online' : 'Offline';
     });
+    updateFilterCounts();
   });
 
-  async function search(text) {
-    const box = $('#fr-results');
+  let currentFriendsCache = [];
+
+  function updateFilterCounts() {
+    const total = currentFriendsCache.length;
+    const online = currentFriendsCache.filter((f) => B.onlineIds.has(f.profile.id)).length;
+    const cntAll = $('#cnt-all'), cntOn = $('#cnt-online'), tabBadge = $('#tab-fr-badge');
+    if (cntAll) cntAll.textContent = total;
+    if (cntOn) cntOn.textContent = online;
+    if (tabBadge) tabBadge.textContent = total;
+  }
+
+  async function execSearch(text) {
+    const box = $('#fr-search-results');
     if (!box) return;
-    if (!B.canNet) { box.innerHTML = '<p class="muted small">Precisas de ligação à internet para procurar.</p>'; return; }
-    if (!text.trim()) { box.innerHTML = ''; return; }
+    text = text.trim();
+    if (!text) { box.innerHTML = ''; return; }
+    box.innerHTML = loading();
     try {
-      const users = await B.searchUsers(text);
-      box.innerHTML = users.length ? users.map((u) => `
-        <div class="user-row" data-id="${u.id}">
-          ${avatar(u, 40)}<div class="ur-main"><b>${esc(u.display_name)}</b><small>@${esc(u.username)} · Nv ${levelInfo(u.xp).level}</small></div>
-          <button class="btn btn-sm btn-ghost" data-act="view" data-u="${esc(u.username)}">Perfil</button>
-          <button class="btn btn-sm btn-neon" data-act="add" data-id="${u.id}">Adicionar</button></div>`).join('')
-        : '<p class="muted small">Nenhum jogador encontrado.</p>';
+      const [{ data: fr }, users] = await Promise.all([
+        B.getFriends(),
+        B.searchUsers(text)
+      ]);
+      if (!users.length) {
+        box.innerHTML = `<div class="empty-search muted small">Nenhum jogador encontrado com o nome "<b>${esc(text)}</b>".</div>`;
+        return;
+      }
+      const friendIds = new Set(fr.friends.map((f) => f.profile.id));
+      const incMap = new Map(fr.incoming.map((i) => [i.profile.id, i.fid]));
+      const outMap = new Map(fr.outgoing.map((o) => [o.profile.id, o.fid]));
+      const me = B.me();
+
+      box.innerHTML = users.map((u) => {
+        const isMe = me && (u.id === me.id || u.username === me.username);
+        let actionHtml = '';
+        if (isMe) {
+          actionHtml = `<span class="chip">(És tu)</span>`;
+        } else if (friendIds.has(u.id)) {
+          actionHtml = `<span class="chip good">✓ Amigos</span><button class="btn btn-sm btn-ghost" data-act="view" data-u="${esc(u.username)}">Ver Perfil</button>`;
+        } else if (incMap.has(u.id)) {
+          const fid = incMap.get(u.id);
+          actionHtml = `<button class="btn btn-sm btn-neon" data-act="accept" data-fid="${fid}">Aceitar Pedido 🎉</button>`;
+        } else if (outMap.has(u.id)) {
+          const fid = outMap.get(u.id);
+          actionHtml = `<span class="chip">Pedido enviado ⏳</span><button class="btn btn-sm btn-ghost danger" data-act="cancel" data-fid="${fid}">Cancelar</button>`;
+        } else {
+          actionHtml = `<button class="btn btn-sm btn-neon" data-act="add" data-id="${u.id}" data-name="${esc(u.display_name)}">➕ Adicionar Amigo</button>`;
+        }
+
+        return `<div class="user-search-row glass" data-id="${u.id}">
+          <div class="usr-avatar">${avatar(u, 44)}</div>
+          <div class="usr-info">
+            <b>${esc(u.display_name)}</b>
+            <small class="muted">@${esc(u.username)} · Nv ${levelInfo(u.xp).level}</small>
+          </div>
+          <div class="usr-actions">${actionHtml}</div>
+        </div>`;
+      }).join('');
+
       $$('[data-act=view]', box).forEach((b) => (b.onclick = () => goProfile({ username: b.dataset.u })));
+      $$('[data-act=accept]', box).forEach((b) => (b.onclick = () => handleAct(() => B.acceptRequest(+b.dataset.fid), 'Pedido aceite! Agora são amigos. 🎉')));
+      $$('[data-act=cancel]', box).forEach((b) => (b.onclick = () => handleAct(() => B.removeFriendship(+b.dataset.fid), 'Pedido cancelado.')));
       $$('[data-act=add]', box).forEach((b) => (b.onclick = async () => {
         b.disabled = true;
-        try { await B.sendRequest(b.dataset.id); b.textContent = 'Pedido enviado ✓'; toast('Pedido de amizade enviado!', { type: 'good' }); load(); }
-        catch (e) { toast(e.message, { type: 'bad' }); b.disabled = false; }
+        try {
+          await B.sendRequest(b.dataset.id);
+          toast(`Pedido de amizade enviado a <b>${b.dataset.name}</b>!`, { type: 'good' });
+          loadData();
+          execSearch($('#fr-search-input')?.value || '');
+        } catch (e) {
+          toast(e.message, { type: 'bad' });
+          b.disabled = false;
+        }
       }));
-    } catch (e) { box.innerHTML = `<p class="muted small">${esc(e.message)}</p>`; }
-  }
-
-  async function load() {
-    const body = $('#fr-body');
-    if (!body) return;
-    try {
-      const [{ data: fr, stale: s1 }, h2h] = await Promise.all([B.getFriends(), B.getAllH2H().catch(() => ({ data: [] }))]);
-      if (!$('#fr-body')) return;
-      const byFriend = {};
-      (h2h.data || []).forEach((r) => (byFriend[r.friend_id] = byFriend[r.friend_id] || []).push(r));
-      O.app.refreshBadge && O.app.refreshBadge();
-
-      let html = stale(s1);
-      if (fr.incoming.length) html += `<h3 class="sec">Pedidos recebidos</h3>` + fr.incoming.map((i) => userRow(i, `
-          <button class="btn btn-sm btn-neon" data-act="accept" data-fid="${i.fid}">Aceitar</button>
-          <button class="btn btn-sm btn-ghost" data-act="remove" data-fid="${i.fid}">Recusar</button>`)).join('');
-      html += `<h3 class="sec">Os teus amigos <small>${fr.friends.length}</small></h3>`;
-      html += fr.friends.length ? `<div class="friend-grid">${fr.friends.map((f) => friendCard(f, byFriend[f.profile.id])).join('')}</div>`
-        : empty('👥', 'Ainda sem amigos', 'Procura um username acima e envia um pedido.');
-      if (fr.outgoing.length) html += `<h3 class="sec">Pedidos enviados</h3>` + fr.outgoing.map((i) => userRow(i, `
-          <span class="muted small">À espera…</span><button class="btn btn-sm btn-ghost" data-act="remove" data-fid="${i.fid}">Cancelar</button>`)).join('');
-      body.innerHTML = html;
-
-      $$('[data-act=accept]', body).forEach((b) => (b.onclick = () => act(() => B.acceptRequest(+b.dataset.fid), 'Agora são amigos! 🎉')));
-      $$('[data-act=remove]', body).forEach((b) => (b.onclick = () => act(() => B.removeFriendship(+b.dataset.fid), 'Removido.')));
-      $$('[data-act=profile]', body).forEach((b) => (b.onclick = () => goProfile({ id: b.dataset.id })));
-      $$('.user-row[data-pid], .fc-top[data-pid]', body).forEach((r) => (r.querySelector('.ur-main, .fc-name') || r).addEventListener('click', () => goProfile({ id: r.dataset.pid })));
     } catch (e) {
-      body.innerHTML = empty('📡', 'Sem dados offline', 'Liga-te à internet para carregares a lista de amigos pela primeira vez.');
+      box.innerHTML = `<p class="muted small">${esc(e.message)}</p>`;
     }
   }
-  async function act(fn, msg) {
-    try { await fn(); toast(msg, { type: 'good' }); load(); } catch (e) { toast(e.message || 'Erro', { type: 'bad' }); }
+
+  async function loadData() {
+    const listContainer = $('#fr-friends-container');
+    const incomingBox = $('#fr-incoming-box');
+    const outgoingBox = $('#fr-outgoing-box');
+    const suggestBox = $('#fr-suggestions-box');
+    if (!listContainer) return;
+
+    try {
+      const [{ data: fr, stale: s1 }, h2h, suggested] = await Promise.all([
+        B.getFriends(),
+        B.getAllH2H().catch(() => ({ data: [] })),
+        B.getSuggestedUsers().catch(() => [])
+      ]);
+
+      if (!$('#fr-friends-container')) return;
+      currentFriendsCache = fr.friends;
+      const byFriend = {};
+      (h2h.data || []).forEach((r) => (byFriend[r.friend_id] = byFriend[r.friend_id] || []).push(r));
+
+      // Atualiza badges
+      const reqBadge = $('#tab-req-badge');
+      if (reqBadge) {
+        reqBadge.hidden = !fr.incoming.length;
+        reqBadge.textContent = fr.incoming.length;
+      }
+      updateFilterCounts();
+      O.app.refreshBadge && O.app.refreshBadge();
+
+      // Render Friends List
+      renderFriendsList(fr.friends, byFriend, s1);
+
+      // Render Incoming Requests
+      if (incomingBox) {
+        if (fr.incoming.length) {
+          incomingBox.innerHTML = `
+            <div class="section-card glass pad glow-alert">
+              <h3 class="sec-title">📬 Pedidos de Amizade Recebidos <span class="badge">${fr.incoming.length}</span></h3>
+              <div class="pending-list">${fr.incoming.map((i) => `
+                <div class="pending-row" data-fid="${i.fid}">
+                  ${avatar(i.profile, 44)}
+                  <div class="p-info">
+                    <b>${esc(i.profile.display_name)}</b>
+                    <small class="muted">@${esc(i.profile.username)} · Nv ${levelInfo(i.profile.xp).level}</small>
+                  </div>
+                  <div class="p-actions">
+                    <button class="btn btn-sm btn-neon" data-act="accept" data-fid="${i.fid}">Aceitar 🎉</button>
+                    <button class="btn btn-sm btn-ghost danger" data-act="remove" data-fid="${i.fid}">Recusar</button>
+                  </div>
+                </div>`).join('')}</div>
+            </div>`;
+          $$('[data-act=accept]', incomingBox).forEach((b) => (b.onclick = () => handleAct(() => B.acceptRequest(+b.dataset.fid), 'Agora são amigos! 🎉')));
+          $$('[data-act=remove]', incomingBox).forEach((b) => (b.onclick = () => handleAct(() => B.removeFriendship(+b.dataset.fid), 'Pedido recusado.')));
+        } else {
+          incomingBox.innerHTML = '';
+        }
+      }
+
+      // Render Outgoing Requests
+      if (outgoingBox) {
+        if (fr.outgoing.length) {
+          outgoingBox.innerHTML = `
+            <div class="section-card glass pad">
+              <h3 class="sec-title muted">📤 Pedidos Enviados Pendentes <small>(${fr.outgoing.length})</small></h3>
+              <div class="pending-list">${fr.outgoing.map((i) => `
+                <div class="pending-row" data-fid="${i.fid}">
+                  ${avatar(i.profile, 44)}
+                  <div class="p-info">
+                    <b>${esc(i.profile.display_name)}</b>
+                    <small class="muted">@${esc(i.profile.username)} · À espera de confirmação...</small>
+                  </div>
+                  <div class="p-actions">
+                    <button class="btn btn-sm btn-ghost danger" data-act="cancel-out" data-fid="${i.fid}">Cancelar Pedido</button>
+                  </div>
+                </div>`).join('')}</div>
+            </div>`;
+          $$('[data-act=cancel-out]', outgoingBox).forEach((b) => (b.onclick = () => handleAct(() => B.removeFriendship(+b.dataset.fid), 'Pedido cancelado.')));
+        } else {
+          outgoingBox.innerHTML = '';
+        }
+      }
+
+      // Render Suggested Users
+      if (suggestBox) {
+        const friendIds = new Set(fr.friends.map((f) => f.profile.id));
+        const incIds = new Set(fr.incoming.map((i) => i.profile.id));
+        const outIds = new Set(fr.outgoing.map((o) => o.profile.id));
+        const filteredSug = suggested.filter((u) => !friendIds.has(u.id) && !incIds.has(u.id) && !outIds.has(u.id));
+
+        if (filteredSug.length) {
+          suggestBox.innerHTML = `
+            <div class="section-card glass pad">
+              <h3 class="sec-title">🌟 Jogadores Recomendados da Comunidade</h3>
+              <p class="muted small mb-12">Jogadores ativos com quem podes jogar e comparar pontuações.</p>
+              <div class="suggest-grid">${filteredSug.map((u) => `
+                <div class="suggest-card glass">
+                  <div class="sug-top">${avatar(u, 48)}<div class="sug-info"><b>${esc(u.display_name)}</b><small class="muted">@${esc(u.username)}</small><span class="chip mini">Nv ${levelInfo(u.xp).level}</span></div></div>
+                  <button class="btn btn-sm btn-neon w-full" data-act="sug-add" data-id="${u.id}" data-name="${esc(u.display_name)}">➕ Adicionar</button>
+                </div>`).join('')}</div>
+            </div>`;
+          $$('[data-act=sug-add]', suggestBox).forEach((b) => (b.onclick = async () => {
+            b.disabled = true;
+            try {
+              await B.sendRequest(b.dataset.id);
+              toast(`Pedido de amizade enviado a <b>${b.dataset.name}</b>!`, { type: 'good' });
+              loadData();
+            } catch (e) {
+              toast(e.message, { type: 'bad' });
+              b.disabled = false;
+            }
+          }));
+        } else {
+          suggestBox.innerHTML = '';
+        }
+      }
+    } catch (e) {
+      listContainer.innerHTML = empty('📡', 'Sem dados offline', 'Liga-te à internet para carregar a lista de amigos.');
+    }
   }
-  const userRow = (i, actions) => `<div class="user-row glass" data-pid="${i.profile.id}">${avatar(i.profile, 40)}
-    <div class="ur-main"><b>${esc(i.profile.display_name)}</b><small>@${esc(i.profile.username)} · Nv ${levelInfo(i.profile.xp).level}</small></div>${actions}</div>`;
+
+  function renderFriendsList(friends, byFriend, isStale) {
+    const listContainer = $('#fr-friends-container');
+    if (!listContainer) return;
+    const searchFilter = ($('#fr-list-search')?.value || '').toLowerCase().trim();
+    const activeFilter = $('.pill-btn.active')?.dataset.filter || 'all';
+
+    let list = friends;
+    if (activeFilter === 'online') {
+      list = list.filter((f) => B.onlineIds.has(f.profile.id));
+    }
+    if (searchFilter) {
+      list = list.filter((f) => {
+        const u = f.profile.username.toLowerCase();
+        const d = (f.profile.display_name || '').toLowerCase();
+        return u.includes(searchFilter) || d.includes(searchFilter);
+      });
+    }
+
+    if (!list.length) {
+      if (friends.length === 0) {
+        listContainer.innerHTML = stale(isStale) + `
+          <div class="empty glass empty-friends">
+            <div class="empty-ic">👥</div>
+            <h3>Ainda não tens amigos adicionados</h3>
+            <p class="muted">Partilha o teu link ou procura usernames para começarem a jogar Mexicana juntos!</p>
+            <button class="btn btn-neon btn-lg" id="btn-empty-add">➕ Procurar e Adicionar Amigos</button>
+          </div>`;
+        const b = $('#btn-empty-add');
+        if (b) b.onclick = () => $('#tab-btn-add')?.click();
+      } else {
+        listContainer.innerHTML = stale(isStale) + `
+          <div class="empty-search muted small">Nenhum amigo corresponde ao filtro selecionado.</div>`;
+      }
+      return;
+    }
+
+    listContainer.innerHTML = stale(isStale) + `
+      <div class="friend-grid">
+        ${list.map((f) => friendCard(f, byFriend[f.profile.id])).join('')}
+      </div>`;
+
+    // Ações dos cartões
+    $$('[data-act=profile]', listContainer).forEach((b) => (b.onclick = () => goProfile({ id: b.dataset.id })));
+    $$('[data-act=invite-mx]', listContainer).forEach((b) => (b.onclick = () => {
+      const u = b.dataset.uname;
+      toast(`A iniciar Mexicana para convidar <b>${esc(u)}</b>...`, { type: 'good' });
+      setTimeout(() => { location.href = `mexicana.html?invite=${encodeURIComponent(u)}`; }, 400);
+    }));
+    $$('[data-act=remove]', listContainer).forEach((b) => (b.onclick = () => {
+      const name = b.dataset.name;
+      if (confirm(`Queres mesmo remover ${name} dos teus amigos?`)) {
+        handleAct(() => B.removeFriendship(+b.dataset.fid), 'Amigo removido.');
+      }
+    }));
+
+    // Wiring filtros
+    $$('.pill-btn').forEach((p) => {
+      p.onclick = () => {
+        $$('.pill-btn').forEach((x) => x.classList.remove('active'));
+        p.classList.add('active');
+        renderFriendsList(currentFriendsCache, byFriend, isStale);
+      };
+    });
+
+    const searchInput = $('#fr-list-search');
+    if (searchInput && !searchInput.dataset.wired) {
+      searchInput.dataset.wired = '1';
+      searchInput.addEventListener('input', () => renderFriendsList(currentFriendsCache, byFriend, isStale));
+    }
+  }
+
+  async function handleAct(fn, msg) {
+    try {
+      await fn();
+      toast(msg, { type: 'good' });
+      loadData();
+    } catch (e) {
+      toast(e.message || 'Erro', { type: 'bad' });
+    }
+  }
 
   function friendCard(f, rows) {
-    const p = f.profile, on = B.onlineIds.has(p.id);
-    const tw = (rows || []).reduce((a, r) => a + r.wins, 0), tl = (rows || []).reduce((a, r) => a + r.losses, 0);
-    return `<article class="friend-card glass">
-      <div class="fc-top" data-pid="${p.id}">${avatar(p, 52)}
-        <div class="fc-name"><b>${esc(p.display_name)}</b><small>@${esc(p.username)} · Nv ${levelInfo(p.xp).level}</small></div>
-        <span class="dot ${on ? 'on' : ''}" title="${on ? 'Online' : 'Offline'}"></span></div>
-      <div class="fc-h2h"><div class="fc-h2h-head"><span>Tu × ${esc(p.display_name)}</span>${rows && rows.length ? score(tw, tl) : ''}</div>
-        ${h2hRows(rows, 'Ainda não jogaram juntos online.')}</div>
-      <div class="fc-actions"><button class="btn btn-sm btn-ghost" data-act="profile" data-id="${p.id}">Ver perfil</button>
-        <button class="btn btn-sm btn-ghost danger" data-act="remove" data-fid="${f.fid}">Remover</button></div></article>`;
+    const p = f.profile;
+    const on = B.onlineIds.has(p.id);
+    const tw = (rows || []).reduce((a, r) => a + r.wins, 0);
+    const tl = (rows || []).reduce((a, r) => a + r.losses, 0);
+    const td = (rows || []).reduce((a, r) => a + (r.draws || 0), 0);
+
+    return `<article class="friend-card glass" data-pid="${p.id}">
+      <div class="fc-header">
+        <div class="fc-avatar-wrap">
+          ${avatar(p, 54)}
+          <span class="fc-dot ${on ? 'on' : ''}" title="${on ? 'Online' : 'Offline'}"></span>
+        </div>
+        <div class="fc-user-info">
+          <b>${esc(p.display_name)}</b>
+          <small class="muted">@${esc(p.username)} · Nv ${levelInfo(p.xp).level}</small>
+          <span class="fc-status-txt muted small">${on ? '🟢 Online' : '⚪ Offline'}</span>
+        </div>
+      </div>
+
+      <div class="fc-h2h">
+        <div class="fc-h2h-head">
+          <span>Tu × ${esc(p.display_name)}</span>
+          ${rows && rows.length ? score(tw, tl, td) : '<small class="muted">0 jogos</small>'}
+        </div>
+        ${h2hRows(rows, 'Ainda não jogaram juntos online.')}
+      </div>
+
+      <div class="fc-actions">
+        <button class="btn btn-sm btn-neon" data-act="invite-mx" data-pid="${p.id}" data-uname="${esc(p.username)}">🃏 Desafiar Mexicana</button>
+        <button class="btn btn-sm btn-ghost" data-act="profile" data-id="${p.id}">Perfil</button>
+        <button class="btn btn-sm btn-ghost danger" data-act="remove" data-fid="${f.fid}" data-name="${esc(p.display_name)}" title="Remover amigo">✕</button>
+      </div>
+    </article>`;
   }
 
   /* ===================== PERFIL ===================== */

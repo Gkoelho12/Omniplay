@@ -218,11 +218,65 @@
     async searchUsers(text) {
       text = text.toLowerCase().replace(/[^a-z0-9_]/g, '');
       if (!text) return [];
+      if (!this.canNet) {
+        const accounts = LS.get('accounts', {});
+        const me = this.me();
+        const meId = me ? (me.id || me.username) : null;
+        let matches = Object.values(accounts).filter((a) => {
+          const aid = a.id || a.username;
+          return aid !== meId && (a.username.toLowerCase().includes(text) || (a.display_name && a.display_name.toLowerCase().includes(text)));
+        }).map((a) => ({
+          id: a.id || a.username,
+          username: a.username,
+          display_name: a.display_name || a.username,
+          avatar: a.avatar || '🎲',
+          color: a.color || 200,
+          xp: a.xp || 0
+        }));
+        // Inclui jogadores demo se pesquisar por nomes parecidos
+        const demos = [
+          { id: 'demo_alex', username: 'alex_gamer', display_name: 'Alex Gamer', avatar: '🦊', color: 32, xp: 420 },
+          { id: 'demo_sofia', username: 'sofia_pro', display_name: 'Sofia Pro', avatar: '🌸', color: 310, xp: 850 },
+          { id: 'demo_tiago', username: 'tiago99', display_name: 'Tiago 99', avatar: '🚀', color: 210, xp: 260 }
+        ];
+        demos.forEach((d) => {
+          if (d.username.includes(text) || d.display_name.toLowerCase().includes(text)) {
+            if (!matches.some((m) => m.username === d.username) && (!me || me.username !== d.username)) matches.push(d);
+          }
+        });
+        return matches.slice(0, 10);
+      }
       const { data, error } = await this.sb.from('profiles')
         .select('id,username,display_name,avatar,color,xp').ilike('username', text + '%')
         .neq('id', this.user.id).limit(10);
       if (error) throw error;
       return data;
+    },
+
+    async getSuggestedUsers() {
+      if (!this.canNet) {
+        const accounts = LS.get('accounts', {});
+        const me = this.me();
+        const meId = me ? (me.id || me.username) : null;
+        let list = Object.values(accounts).filter((a) => (a.id || a.username) !== meId);
+        if (!list.length) {
+          list = [
+            { id: 'demo_alex', username: 'alex_gamer', display_name: 'Alex Gamer', avatar: '🦊', color: 32, xp: 420 },
+            { id: 'demo_sofia', username: 'sofia_pro', display_name: 'Sofia Pro', avatar: '🌸', color: 310, xp: 850 },
+            { id: 'demo_tiago', username: 'tiago99', display_name: 'Tiago 99', avatar: '🚀', color: 210, xp: 260 }
+          ];
+        }
+        return list.slice(0, 6);
+      }
+      try {
+        const { data, error } = await this.sb.from('profiles')
+          .select('id,username,display_name,avatar,color,xp')
+          .neq('id', this.user.id).order('xp', { ascending: false }).limit(6);
+        if (error) throw error;
+        return data || [];
+      } catch {
+        return [];
+      }
     },
 
     async getLeaderboard() {
@@ -235,6 +289,33 @@
 
     /* ============ Amigos ============ */
     async getFriends() {
+      if (!this.canNet) {
+        const me = this.me();
+        const meId = me ? (me.id || me.username) : null;
+        const rows = LS.get('local_friendships', []);
+        const accounts = LS.get('accounts', {});
+        const out = { friends: [], incoming: [], outgoing: [] };
+        if (meId) {
+          const demos = {
+            demo_alex: { id: 'demo_alex', username: 'alex_gamer', display_name: 'Alex Gamer', avatar: '🦊', color: 32, xp: 420 },
+            demo_sofia: { id: 'demo_sofia', username: 'sofia_pro', display_name: 'Sofia Pro', avatar: '🌸', color: 310, xp: 850 },
+            demo_tiago: { id: 'demo_tiago', username: 'tiago99', display_name: 'Tiago 99', avatar: '🚀', color: 210, xp: 260 }
+          };
+          rows.forEach((r) => {
+            const isReq = r.requester === meId;
+            const isAdd = r.addressee === meId;
+            if (!isReq && !isAdd) return;
+            const otherId = isReq ? r.addressee : r.requester;
+            let otherAcc = accounts[otherId] || Object.values(accounts).find((a) => a.id === otherId || a.username === otherId) || demos[otherId];
+            if (!otherAcc) otherAcc = { id: otherId, username: otherId, display_name: otherId, avatar: '👤', color: 180, xp: 0 };
+            const item = { fid: r.id, profile: otherAcc };
+            if (r.status === 'accepted') out.friends.push(item);
+            else if (isAdd) out.incoming.push(item);
+            else out.outgoing.push(item);
+          });
+        }
+        return { data: out, stale: false };
+      }
       return this.cached('friends', async () => {
         const me = this.user.id;
         const { data: rows, error } = await this.sb.from('friendships')
@@ -263,22 +344,53 @@
     },
 
     async getRelation(otherId) {
-      if (!this.canNet) return null;
-      const me = this.user.id;
+      const me = this.me();
+      const meId = me ? (me.id || me.username) : null;
+      if (!meId) return null;
+      if (!this.canNet) {
+        const rows = LS.get('local_friendships', []);
+        const rel = rows.find((r) => (r.requester === meId && r.addressee === otherId) || (r.requester === otherId && r.addressee === meId));
+        return rel ? { id: rel.id, status: rel.status, mine: rel.requester === meId } : null;
+      }
       const { data } = await this.sb.from('friendships').select('id,requester,addressee,status')
-        .or(`and(requester.eq.${me},addressee.eq.${otherId}),and(requester.eq.${otherId},addressee.eq.${me})`).maybeSingle();
-      return data ? { id: data.id, status: data.status, mine: data.requester === me } : null;
+        .or(`and(requester.eq.${me.id},addressee.eq.${otherId}),and(requester.eq.${otherId},addressee.eq.${me.id})`).maybeSingle();
+      return data ? { id: data.id, status: data.status, mine: data.requester === me.id } : null;
     },
 
     async sendRequest(otherId) {
+      const me = this.me();
+      const meId = me ? (me.id || me.username) : null;
+      if (!meId) throw new Error('Precisas de iniciar sessão para adicionar amigos.');
+      if (meId === otherId) throw new Error('Não podes adicionar-te a ti próprio!');
+      if (!this.canNet) {
+        const rows = LS.get('local_friendships', []);
+        const exists = rows.find((r) => (r.requester === meId && r.addressee === otherId) || (r.requester === otherId && r.addressee === meId));
+        if (exists) throw new Error('Já existe um pedido ou amizade com este jogador.');
+        rows.push({ id: Date.now(), requester: meId, addressee: otherId, status: 'pending' });
+        LS.set('local_friendships', rows);
+        return;
+      }
       const { error } = await this.sb.from('friendships').insert({ requester: this.user.id, addressee: otherId });
       if (error) throw new Error(error.code === '23505' ? 'Já existe um pedido ou amizade com este jogador.' : error.message);
     },
     async acceptRequest(fid) {
+      if (!this.canNet) {
+        const rows = LS.get('local_friendships', []);
+        const r = rows.find((x) => x.id === fid);
+        if (r) r.status = 'accepted';
+        LS.set('local_friendships', rows);
+        return;
+      }
       const { error } = await this.sb.from('friendships').update({ status: 'accepted' }).eq('id', fid);
       if (error) throw error;
     },
     async removeFriendship(fid) {
+      if (!this.canNet) {
+        let rows = LS.get('local_friendships', []);
+        rows = rows.filter((x) => x.id !== fid);
+        LS.set('local_friendships', rows);
+        return;
+      }
       const { error } = await this.sb.from('friendships').delete().eq('id', fid);
       if (error) throw error;
     },
