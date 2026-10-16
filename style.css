@@ -519,6 +519,22 @@ main#view.enter { animation: viewIn .5s cubic-bezier(.2, .8, .2, 1); }
   transition: transform .2s, border-color .2s;
 }
 .user-search-row:hover { transform: translateX(3px); border-color: rgba(34, 211, 238, .35); }
+.direct-invite-row {
+  border: 1px dashed rgba(34, 211, 238, .45);
+  background: rgba(34, 211, 238, .05);
+}
+.direct-invite-row:hover {
+  background: rgba(34, 211, 238, .1);
+  border-color: var(--cyan);
+}
+.mutual-chip {
+  background: rgba(167, 139, 250, .18) !important;
+  border: 1px solid rgba(167, 139, 250, .4) !important;
+  color: #c4b5fd !important;
+  font-size: .7rem !important;
+  padding: 2px 7px !important;
+  margin-top: 3px !important;
+}
 .usr-avatar { flex: none; }
 .usr-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .usr-info b { font-size: 1rem; color: var(--text); }

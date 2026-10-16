@@ -216,64 +216,218 @@
     },
 
     async searchUsers(text) {
-      text = text.toLowerCase().replace(/[^a-z0-9_]/g, '');
-      if (!text) return [];
+      const raw = (text || '').trim();
+      if (!raw) return [];
+
+      const norm = (s) => (s || '').toString().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+      const cleanTarget = norm(raw);
+      const cleanUname = raw.replace(/^@/, '').toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 20);
+
+      const me = this.me();
+      const meId = me ? (me.id || me.username) : null;
+      const meUname = me ? (me.username || '').toLowerCase() : '';
+
+      const results = [];
+      const seen = new Set();
+      if (meId) seen.add(meId);
+      if (meUname) seen.add(meUname);
+
       if (!this.canNet) {
         const accounts = LS.get('accounts', {});
-        const me = this.me();
-        const meId = me ? (me.id || me.username) : null;
-        let matches = Object.values(accounts).filter((a) => {
+        // 1. Procurar nas contas guardadas no dispositivo
+        Object.values(accounts).forEach((a) => {
           const aid = a.id || a.username;
-          return aid !== meId && (a.username.toLowerCase().includes(text) || (a.display_name && a.display_name.toLowerCase().includes(text)));
-        }).map((a) => ({
-          id: a.id || a.username,
-          username: a.username,
-          display_name: a.display_name || a.username,
-          avatar: a.avatar || '🎲',
-          color: a.color || 200,
-          xp: a.xp || 0
-        }));
-        // Inclui jogadores demo se pesquisar por nomes parecidos
-        const demos = [
-          { id: 'demo_alex', username: 'alex_gamer', display_name: 'Alex Gamer', avatar: '🦊', color: 32, xp: 420 },
-          { id: 'demo_sofia', username: 'sofia_pro', display_name: 'Sofia Pro', avatar: '🌸', color: 310, xp: 850 },
-          { id: 'demo_tiago', username: 'tiago99', display_name: 'Tiago 99', avatar: '🚀', color: 210, xp: 260 }
-        ];
-        demos.forEach((d) => {
-          if (d.username.includes(text) || d.display_name.toLowerCase().includes(text)) {
-            if (!matches.some((m) => m.username === d.username) && (!me || me.username !== d.username)) matches.push(d);
+          const au = (a.username || '').toLowerCase();
+          if (seen.has(aid) || seen.has(au)) return;
+          const matchU = norm(a.username).includes(cleanTarget);
+          const matchD = a.display_name && norm(a.display_name).includes(cleanTarget);
+          if (matchU || matchD) {
+            seen.add(aid);
+            seen.add(au);
+            results.push({
+              id: a.id || a.username,
+              username: a.username,
+              display_name: a.display_name || a.username,
+              avatar: a.avatar || '🎲',
+              color: a.color || 200,
+              xp: a.xp || 0
+            });
           }
         });
-        return matches.slice(0, 10);
-      }
-      const { data, error } = await this.sb.from('profiles')
-        .select('id,username,display_name,avatar,color,xp').ilike('username', text + '%')
-        .neq('id', this.user.id).limit(10);
-      if (error) throw error;
-      return data;
-    },
 
-    async getSuggestedUsers() {
-      if (!this.canNet) {
-        const accounts = LS.get('accounts', {});
-        const me = this.me();
-        const meId = me ? (me.id || me.username) : null;
-        let list = Object.values(accounts).filter((a) => (a.id || a.username) !== meId);
-        if (!list.length) {
-          list = [
-            { id: 'demo_alex', username: 'alex_gamer', display_name: 'Alex Gamer', avatar: '🦊', color: 32, xp: 420 },
-            { id: 'demo_sofia', username: 'sofia_pro', display_name: 'Sofia Pro', avatar: '🌸', color: 310, xp: 850 },
-            { id: 'demo_tiago', username: 'tiago99', display_name: 'Tiago 99', avatar: '🚀', color: 210, xp: 260 }
-          ];
+        // 2. Verificar amizades ou pedidos locais existentes
+        const rows = LS.get('local_friendships', []);
+        rows.forEach((r) => {
+          const other = r.requester === meId ? r.addressee : (r.addressee === meId ? r.requester : null);
+          if (other && !seen.has(other)) {
+            const uclean = other.replace(/^usr_/, '');
+            if (norm(uclean).includes(cleanTarget)) {
+              seen.add(other);
+              seen.add(uclean);
+              results.push({
+                id: other,
+                username: uclean,
+                display_name: uclean.charAt(0).toUpperCase() + uclean.slice(1),
+                avatar: '👤',
+                color: 180,
+                xp: 0
+              });
+            }
+          }
+        });
+
+        // 3. Se digitou um username válido e não existe nos resultados, dá opção de envio direto
+        if (cleanUname && cleanUname.length >= 2 && !seen.has(cleanUname)) {
+          const hue = Math.abs(cleanUname.split('').reduce((acc, c) => acc + c.charCodeAt(0) * 19, 0)) % 360;
+          results.push({
+            id: 'usr_' + cleanUname,
+            username: cleanUname,
+            display_name: cleanUname.charAt(0).toUpperCase() + cleanUname.slice(1),
+            avatar: '👤',
+            color: hue,
+            xp: 0,
+            isDirect: true
+          });
         }
-        return list.slice(0, 6);
+
+        return results.slice(0, 10);
       }
+
+      // Se com ligação ao Supabase
       try {
         const { data, error } = await this.sb.from('profiles')
           .select('id,username,display_name,avatar,color,xp')
-          .neq('id', this.user.id).order('xp', { ascending: false }).limit(6);
+          .or(`username.ilike.%${cleanUname}%,display_name.ilike.%${raw}%`)
+          .neq('id', this.user.id)
+          .limit(10);
         if (error) throw error;
-        return data || [];
+        const res = data || [];
+        if (cleanUname && cleanUname.length >= 2 && !res.some((p) => (p.username || '').toLowerCase() === cleanUname)) {
+          res.push({
+            id: 'usr_' + cleanUname,
+            username: cleanUname,
+            display_name: cleanUname.charAt(0).toUpperCase() + cleanUname.slice(1),
+            avatar: '👤',
+            color: 180,
+            xp: 0,
+            isDirect: true
+          });
+        }
+        return res;
+      } catch {
+        return [];
+      }
+    },
+
+    /**
+     * Recomendações: apenas amigos de amigos do utilizador atual.
+     * Se o utilizador não tiver amigos, ou os amigos não tiverem outros amigos, retorna [].
+     */
+    async getSuggestedUsers() {
+      const me = this.me();
+      const meId = me ? (me.id || me.username) : null;
+      if (!meId) return [];
+
+      if (!this.canNet) {
+        const rows = LS.get('local_friendships', []);
+        const accounts = LS.get('accounts', {});
+
+        // 1. Amigos diretos aceites do utilizador atual e lista de pendentes
+        const directFriendIds = new Set();
+        const excludeIds = new Set([meId]);
+        if (me && me.username) excludeIds.add(me.username);
+
+        rows.forEach((r) => {
+          const isReq = r.requester === meId;
+          const isAdd = r.addressee === meId;
+          if (!isReq && !isAdd) return;
+          const other = isReq ? r.addressee : r.requester;
+          excludeIds.add(other);
+          excludeIds.add(other.replace(/^usr_/, ''));
+          if (r.status === 'accepted') {
+            directFriendIds.add(other);
+          }
+        });
+
+        if (!directFriendIds.size) return [];
+
+        // 2. Procurar amigos desses amigos (amigos de amigos)
+        const suggestionsMap = new Map();
+
+        rows.forEach((r) => {
+          if (r.status !== 'accepted') return;
+          let mutualFriendId = null;
+          let candidateId = null;
+          if (directFriendIds.has(r.requester) && !excludeIds.has(r.addressee) && !excludeIds.has(r.addressee.replace(/^usr_/, ''))) {
+            mutualFriendId = r.requester;
+            candidateId = r.addressee;
+          } else if (directFriendIds.has(r.addressee) && !excludeIds.has(r.requester) && !excludeIds.has(r.requester.replace(/^usr_/, ''))) {
+            mutualFriendId = r.addressee;
+            candidateId = r.requester;
+          }
+
+          if (candidateId && mutualFriendId && !suggestionsMap.has(candidateId)) {
+            // Nome do amigo mútuo
+            const mutualAcc = accounts[mutualFriendId] || Object.values(accounts).find((a) => a.id === mutualFriendId || a.username === mutualFriendId);
+            const mutualName = mutualAcc ? (mutualAcc.display_name || mutualAcc.username) : mutualFriendId.replace(/^usr_/, '');
+
+            // Dados do amigo do amigo
+            let candAcc = accounts[candidateId] || Object.values(accounts).find((a) => a.id === candidateId || a.username === candidateId);
+            if (!candAcc) {
+              const uname = candidateId.replace(/^usr_/, '');
+              candAcc = {
+                id: candidateId,
+                username: uname,
+                display_name: uname.charAt(0).toUpperCase() + uname.slice(1),
+                avatar: '👤',
+                color: 180,
+                xp: 0
+              };
+            }
+            suggestionsMap.set(candidateId, {
+              ...candAcc,
+              mutual_friend: mutualName
+            });
+          }
+        });
+
+        return Array.from(suggestionsMap.values()).slice(0, 8);
+      }
+
+      // Supabase
+      try {
+        const me = this.user.id;
+        const { data: myF } = await this.sb.from('friendships')
+          .select('requester,addressee')
+          .eq('status', 'accepted')
+          .or(`requester.eq.${me},addressee.eq.${me}`);
+        if (!myF || !myF.length) return [];
+
+        const myFriendIds = myF.map((r) => (r.requester === me ? r.addressee : r.requester));
+        const { data: fof } = await this.sb.from('friendships')
+          .select('requester,addressee')
+          .eq('status', 'accepted')
+          .or(`requester.in.(${myFriendIds.join(',')}),addressee.in.(${myFriendIds.join(',')})`);
+
+        const candidateIds = new Set();
+        const mutualMap = {};
+        (fof || []).forEach((r) => {
+          const isReqF = myFriendIds.includes(r.requester);
+          const other = isReqF ? r.addressee : r.requester;
+          const mutual = isReqF ? r.requester : r.addressee;
+          if (other !== me && !myFriendIds.includes(other)) {
+            candidateIds.add(other);
+            mutualMap[other] = mutual;
+          }
+        });
+
+        if (!candidateIds.size) return [];
+        const { data: profs } = await this.sb.from('profiles')
+          .select('id,username,display_name,avatar,color,xp')
+          .in('id', [...candidateIds])
+          .limit(8);
+
+        return (profs || []).map((p) => ({ ...p, mutual_friend: mutualMap[p.id] }));
       } catch {
         return [];
       }
@@ -296,18 +450,24 @@
         const accounts = LS.get('accounts', {});
         const out = { friends: [], incoming: [], outgoing: [] };
         if (meId) {
-          const demos = {
-            demo_alex: { id: 'demo_alex', username: 'alex_gamer', display_name: 'Alex Gamer', avatar: '🦊', color: 32, xp: 420 },
-            demo_sofia: { id: 'demo_sofia', username: 'sofia_pro', display_name: 'Sofia Pro', avatar: '🌸', color: 310, xp: 850 },
-            demo_tiago: { id: 'demo_tiago', username: 'tiago99', display_name: 'Tiago 99', avatar: '🚀', color: 210, xp: 260 }
-          };
           rows.forEach((r) => {
-            const isReq = r.requester === meId;
-            const isAdd = r.addressee === meId;
+            const isReq = r.requester === meId || (me && me.username && r.requester === me.username);
+            const isAdd = r.addressee === meId || (me && me.username && r.addressee === me.username);
             if (!isReq && !isAdd) return;
             const otherId = isReq ? r.addressee : r.requester;
-            let otherAcc = accounts[otherId] || Object.values(accounts).find((a) => a.id === otherId || a.username === otherId) || demos[otherId];
-            if (!otherAcc) otherAcc = { id: otherId, username: otherId, display_name: otherId, avatar: '👤', color: 180, xp: 0 };
+            let otherAcc = accounts[otherId] || Object.values(accounts).find((a) => a.id === otherId || a.username === otherId);
+            if (!otherAcc) {
+              const uname = otherId.replace(/^usr_/, '');
+              const hue = Math.abs(uname.split('').reduce((acc, c) => acc + c.charCodeAt(0) * 19, 0)) % 360;
+              otherAcc = {
+                id: otherId,
+                username: uname,
+                display_name: uname.charAt(0).toUpperCase() + uname.slice(1),
+                avatar: '👤',
+                color: hue,
+                xp: 0
+              };
+            }
             const item = { fid: r.id, profile: otherAcc };
             if (r.status === 'accepted') out.friends.push(item);
             else if (isAdd) out.incoming.push(item);
@@ -349,8 +509,11 @@
       if (!meId) return null;
       if (!this.canNet) {
         const rows = LS.get('local_friendships', []);
-        const rel = rows.find((r) => (r.requester === meId && r.addressee === otherId) || (r.requester === otherId && r.addressee === meId));
-        return rel ? { id: rel.id, status: rel.status, mine: rel.requester === meId } : null;
+        const rel = rows.find((r) => 
+          (r.requester === meId && (r.addressee === otherId || r.addressee === otherId.replace(/^usr_/, ''))) ||
+          (r.addressee === meId && (r.requester === otherId || r.requester === otherId.replace(/^usr_/, '')))
+        );
+        return rel ? { id: rel.id, status: rel.status, mine: r.requester === meId } : null;
       }
       const { data } = await this.sb.from('friendships').select('id,requester,addressee,status')
         .or(`and(requester.eq.${me.id},addressee.eq.${otherId}),and(requester.eq.${otherId},addressee.eq.${me.id})`).maybeSingle();
@@ -361,10 +524,20 @@
       const me = this.me();
       const meId = me ? (me.id || me.username) : null;
       if (!meId) throw new Error('Precisas de iniciar sessão para adicionar amigos.');
-      if (meId === otherId) throw new Error('Não podes adicionar-te a ti próprio!');
+      const cleanOther = otherId.replace(/^usr_/, '');
+      if (meId === otherId || meId === cleanOther || (me.username && (me.username === otherId || me.username === cleanOther))) {
+        throw new Error('Não podes adicionar-te a ti próprio!');
+      }
       if (!this.canNet) {
         const rows = LS.get('local_friendships', []);
-        const exists = rows.find((r) => (r.requester === meId && r.addressee === otherId) || (r.requester === otherId && r.addressee === meId));
+        const exists = rows.find((r) => {
+          const req = r.requester;
+          const add = r.addressee;
+          const isMine = req === meId || (me.username && req === me.username);
+          const isTheirs = add === meId || (me.username && add === me.username);
+          return (isMine && (add === otherId || add === cleanOther)) ||
+                 (isTheirs && (req === otherId || req === cleanOther));
+        });
         if (exists) throw new Error('Já existe um pedido ou amizade com este jogador.');
         rows.push({ id: Date.now(), requester: meId, addressee: otherId, status: 'pending' });
         LS.set('local_friendships', rows);

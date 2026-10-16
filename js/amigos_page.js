@@ -402,27 +402,33 @@
       const me = B.me();
 
       box.innerHTML = users.map((u) => {
-        const isMe = me && (u.id === me.id || u.username === me.username);
+        const isMe = me && (u.id === me.id || u.username === me.username || (me.username && (u.id === 'usr_' + me.username || u.username === me.username)));
         let actionHtml = '';
         if (isMe) {
           actionHtml = `<span class="chip">(És tu)</span>`;
-        } else if (friendIds.has(u.id)) {
+        } else if (friendIds.has(u.id) || friendIds.has(u.username) || (u.id && friendIds.has(u.id.replace(/^usr_/, '')))) {
           actionHtml = `<span class="chip good">✓ Amigos</span>`;
-        } else if (incMap.has(u.id)) {
-          const fid = incMap.get(u.id);
+        } else if (incMap.has(u.id) || incMap.has(u.username)) {
+          const fid = incMap.get(u.id) || incMap.get(u.username);
           actionHtml = `<button class="btn btn-sm btn-neon" data-act="accept" data-fid="${fid}">Aceitar Pedido 🎉</button>`;
-        } else if (outMap.has(u.id)) {
-          const fid = outMap.get(u.id);
+        } else if (outMap.has(u.id) || outMap.has(u.username) || (u.id && outMap.has(u.id.replace(/^usr_/, '')))) {
+          const fid = outMap.get(u.id) || outMap.get(u.username) || outMap.get(u.id.replace(/^usr_/, ''));
           actionHtml = `<span class="chip">Pedido enviado ⏳</span><button class="btn btn-sm btn-ghost danger" data-act="cancel" data-fid="${fid}">Cancelar</button>`;
+        } else if (u.isDirect) {
+          actionHtml = `<button class="btn btn-sm btn-neon" data-act="add" data-id="${u.id}" data-name="@${esc(u.username)}">➕ Enviar Pedido a @${esc(u.username)}</button>`;
         } else {
           actionHtml = `<button class="btn btn-sm btn-neon" data-act="add" data-id="${u.id}" data-name="${esc(u.display_name)}">➕ Adicionar Amigo</button>`;
         }
 
-        return `<div class="user-search-row glass" data-id="${u.id}">
+        const subtitle = u.isDirect
+          ? `Enviar pedido direto de amizade para este username`
+          : `@${esc(u.username)} · Nv ${levelInfo(u.xp).level}`;
+
+        return `<div class="user-search-row glass ${u.isDirect ? 'direct-invite-row' : ''}" data-id="${u.id}">
           <div class="usr-avatar">${avatar(u, 44)}</div>
           <div class="usr-info">
-            <b>${esc(u.display_name)}</b>
-            <small class="muted">@${esc(u.username)} · Nv ${levelInfo(u.xp).level}</small>
+            <b>${esc(u.display_name || '@' + u.username)}</b>
+            <small class="muted">${subtitle}</small>
           </div>
           <div class="usr-actions">${actionHtml}</div>
         </div>`;
@@ -525,23 +531,40 @@
         }
       }
 
-      // Sugestões
+      // Sugestões: Apenas Amigos de Amigos
       if (suggestBox) {
         const friendIds = new Set(fr.friends.map((f) => f.profile.id));
-        const incIds = new Set(fr.incoming.map((i) => i.profile.id));
-        const outIds = new Set(fr.outgoing.map((o) => o.profile.id));
-        const filteredSug = suggested.filter((u) => !friendIds.has(u.id) && !incIds.has(u.id) && !outIds.has(u.id));
+        const incMap = new Map(fr.incoming.map((i) => [i.profile.id, i.fid]));
+        const outMap = new Map(fr.outgoing.map((o) => [o.profile.id, o.fid]));
+        const filteredSug = (suggested || []).filter((u) => !friendIds.has(u.id));
 
         if (filteredSug.length) {
           suggestBox.innerHTML = `
             <div class="section-card glass pad">
-              <h3 class="sec-title">🌟 Jogadores Recomendados da Comunidade</h3>
-              <p class="muted small mb-12">Jogadores ativos com quem podes jogar Mexicana e comparar pontuações.</p>
-              <div class="suggest-grid">${filteredSug.map((u) => `
-                <div class="suggest-card glass">
-                  <div class="sug-top">${avatar(u, 48)}<div class="sug-info"><b>${esc(u.display_name)}</b><small class="muted">@${esc(u.username)}</small><span class="chip mini">Nv ${levelInfo(u.xp).level}</span></div></div>
-                  <button class="btn btn-sm btn-neon w-full" data-act="sug-add" data-id="${u.id}" data-name="${esc(u.display_name)}">➕ Adicionar</button>
-                </div>`).join('')}</div>
+              <h3 class="sec-title">👥 Amigos de Amigos</h3>
+              <p class="muted small mb-12">Jogadores conectados aos teus amigos no OmniPlay.</p>
+              <div class="suggest-grid">${filteredSug.map((u) => {
+                let btnHtml = '';
+                if (outMap.has(u.id)) {
+                  btnHtml = `<span class="chip w-full center">Pedido enviado ⏳</span>`;
+                } else if (incMap.has(u.id)) {
+                  btnHtml = `<button class="btn btn-sm btn-neon w-full" data-act="sug-accept" data-fid="${incMap.get(u.id)}">Aceitar 🎉</button>`;
+                } else {
+                  btnHtml = `<button class="btn btn-sm btn-neon w-full" data-act="sug-add" data-id="${u.id}" data-name="${esc(u.display_name)}">➕ Adicionar</button>`;
+                }
+                return `
+                  <div class="suggest-card glass">
+                    <div class="sug-top">
+                      ${avatar(u, 48)}
+                      <div class="sug-info">
+                        <b>${esc(u.display_name)}</b>
+                        <small class="muted">@${esc(u.username)}</small>
+                        <span class="chip mini mutual-chip">🔗 Amigo de ${esc(u.mutual_friend || 'um amigo')}</span>
+                      </div>
+                    </div>
+                    ${btnHtml}
+                  </div>`;
+              }).join('')}</div>
             </div>`;
           $$('[data-act=sug-add]', suggestBox).forEach((b) => (b.onclick = async () => {
             b.disabled = true;
@@ -554,6 +577,7 @@
               b.disabled = false;
             }
           }));
+          $$('[data-act=sug-accept]', suggestBox).forEach((b) => (b.onclick = () => handleAct(() => B.acceptRequest(+b.dataset.fid), 'Agora são amigos! 🎉')));
         } else {
           suggestBox.innerHTML = '';
         }
