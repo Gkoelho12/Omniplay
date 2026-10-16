@@ -323,7 +323,7 @@
       $$('#dots i').forEach((d) => d.addEventListener('click', () => { idx = +d.dataset.i; layout(); }));
       $('#roulette').onclick = () => O.play.roulette();
       const heroAdd = $('#hero-btn-add-friends');
-      if (heroAdd) heroAdd.onclick = () => app.nav('friends', { tab: 'add' });
+      if (heroAdd) heroAdd.onclick = () => { window.location.href = 'amigos.html'; };
 
       let sx = null;
       car.addEventListener('pointerdown', (e) => { sx = e.clientX; });

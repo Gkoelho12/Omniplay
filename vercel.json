@@ -1,7 +1,9 @@
 {
   "cleanUrls": false,
   "rewrites": [
-    { "source": "/mexicana", "destination": "/mexicana.html" }
+    { "source": "/mexicana", "destination": "/mexicana.html" },
+    { "source": "/amigos", "destination": "/amigos.html" },
+    { "source": "/friends", "destination": "/amigos.html" }
   ],
   "headers": [
     {
