@@ -1,5 +1,8 @@
 {
-  "cleanUrls": true,
+  "cleanUrls": false,
+  "rewrites": [
+    { "source": "/mexicana", "destination": "/mexicana.html" }
+  ],
   "headers": [
     {
       "source": "/sw.js",
