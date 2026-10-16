@@ -446,28 +446,51 @@
       if (!this.canNet) {
         const me = this.me();
         const meId = me ? (me.id || me.username) : null;
+        const myUname = (me?.username || '').toLowerCase();
+        const myId = (meId || '').toString();
         const rows = LS.get('local_friendships', []);
         const accounts = LS.get('accounts', {});
         const out = { friends: [], incoming: [], outgoing: [] };
+
         if (meId) {
           rows.forEach((r) => {
-            const isReq = r.requester === meId || (me && me.username && r.requester === me.username);
-            const isAdd = r.addressee === meId || (me && me.username && r.addressee === me.username);
+            const reqClean = (r.requester_username || r.requester || '').toString().replace(/^usr_/, '').toLowerCase();
+            const addClean = (r.addressee_username || r.addressee || '').toString().replace(/^usr_/, '').toLowerCase();
+
+            const isReq = r.requester === myId || reqClean === myUname;
+            const isAdd = r.addressee === myId || addClean === myUname;
             if (!isReq && !isAdd) return;
-            const otherId = isReq ? r.addressee : r.requester;
-            let otherAcc = accounts[otherId] || Object.values(accounts).find((a) => a.id === otherId || a.username === otherId);
-            if (!otherAcc) {
-              const uname = otherId.replace(/^usr_/, '');
-              const hue = Math.abs(uname.split('').reduce((acc, c) => acc + c.charCodeAt(0) * 19, 0)) % 360;
-              otherAcc = {
-                id: otherId,
-                username: uname,
-                display_name: uname.charAt(0).toUpperCase() + uname.slice(1),
-                avatar: '👤',
-                color: hue,
-                xp: 0
-              };
+
+            let otherAcc = null;
+            if (isReq) {
+              const targetUname = addClean;
+              otherAcc = accounts[targetUname] || Object.values(accounts).find((a) => (a.username || '').toLowerCase() === targetUname || a.id === r.addressee);
+              if (!otherAcc) {
+                const hue = Math.abs(targetUname.split('').reduce((acc, c) => acc + c.charCodeAt(0) * 19, 0)) % 360;
+                otherAcc = {
+                  id: r.addressee,
+                  username: targetUname,
+                  display_name: targetUname.charAt(0).toUpperCase() + targetUname.slice(1),
+                  avatar: '👤',
+                  color: hue,
+                  xp: 0
+                };
+              }
+            } else {
+              const reqUname = reqClean;
+              otherAcc = accounts[reqUname] || Object.values(accounts).find((a) => (a.username || '').toLowerCase() === reqUname || a.id === r.requester);
+              if (!otherAcc) {
+                otherAcc = {
+                  id: r.requester,
+                  username: reqUname,
+                  display_name: r.requester_name || (reqUname ? reqUname.charAt(0).toUpperCase() + reqUname.slice(1) : 'Amigo'),
+                  avatar: r.requester_avatar || '👤',
+                  color: r.requester_color || 180,
+                  xp: r.requester_xp || 0
+                };
+              }
             }
+
             const item = { fid: r.id, profile: otherAcc };
             if (r.status === 'accepted') out.friends.push(item);
             else if (isAdd) out.incoming.push(item);
@@ -507,13 +530,22 @@
       const me = this.me();
       const meId = me ? (me.id || me.username) : null;
       if (!meId) return null;
+      const cleanOther = (otherId || '').toString().replace(/^usr_/, '').toLowerCase();
+      const myUname = (me.username || '').toLowerCase();
+      const myId = (meId || '').toString();
+
       if (!this.canNet) {
         const rows = LS.get('local_friendships', []);
-        const rel = rows.find((r) => 
-          (r.requester === meId && (r.addressee === otherId || r.addressee === otherId.replace(/^usr_/, ''))) ||
-          (r.addressee === meId && (r.requester === otherId || r.requester === otherId.replace(/^usr_/, '')))
-        );
-        return rel ? { id: rel.id, status: rel.status, mine: r.requester === meId } : null;
+        const rel = rows.find((r) => {
+          const rReq = (r.requester_username || r.requester || '').toString().replace(/^usr_/, '').toLowerCase();
+          const rAdd = (r.addressee_username || r.addressee || '').toString().replace(/^usr_/, '').toLowerCase();
+          const isMine = r.requester === myId || rReq === myUname;
+          const isTheirs = r.addressee === myId || rAdd === myUname;
+          const matchesThem = r.addressee === otherId || rAdd === cleanOther;
+          const matchesUs = r.requester === otherId || rReq === cleanOther;
+          return (isMine && matchesThem) || (isTheirs && matchesUs);
+        });
+        return rel ? { id: rel.id, status: rel.status, mine: rel.requester === myId || (rel.requester_username && rel.requester_username.toLowerCase() === myUname) } : null;
       }
       const { data } = await this.sb.from('friendships').select('id,requester,addressee,status')
         .or(`and(requester.eq.${me.id},addressee.eq.${otherId}),and(requester.eq.${otherId},addressee.eq.${me.id})`).maybeSingle();
@@ -524,26 +556,48 @@
       const me = this.me();
       const meId = me ? (me.id || me.username) : null;
       if (!meId) throw new Error('Precisas de iniciar sessão para adicionar amigos.');
-      const cleanOther = otherId.replace(/^usr_/, '');
-      if (meId === otherId || meId === cleanOther || (me.username && (me.username === otherId || me.username === cleanOther))) {
+      const cleanOther = (otherId || '').toString().replace(/^usr_/, '').toLowerCase();
+      const myUname = (me.username || '').toLowerCase();
+      if (meId === otherId || myUname === cleanOther) {
         throw new Error('Não podes adicionar-te a ti próprio!');
       }
       if (!this.canNet) {
         const rows = LS.get('local_friendships', []);
+        const myId = (meId || '').toString();
         const exists = rows.find((r) => {
-          const req = r.requester;
-          const add = r.addressee;
-          const isMine = req === meId || (me.username && req === me.username);
-          const isTheirs = add === meId || (me.username && add === me.username);
-          return (isMine && (add === otherId || add === cleanOther)) ||
-                 (isTheirs && (req === otherId || req === cleanOther));
+          const rReq = (r.requester_username || r.requester || '').toString().replace(/^usr_/, '').toLowerCase();
+          const rAdd = (r.addressee_username || r.addressee || '').toString().replace(/^usr_/, '').toLowerCase();
+          const isMine = r.requester === myId || rReq === myUname;
+          const isTheirs = r.addressee === myId || rAdd === myUname;
+          return (isMine && (r.addressee === otherId || rAdd === cleanOther)) ||
+                 (isTheirs && (r.requester === otherId || rReq === cleanOther));
         });
         if (exists) throw new Error('Já existe um pedido ou amizade com este jogador.');
-        rows.push({ id: Date.now(), requester: meId, addressee: otherId, status: 'pending' });
+        rows.push({
+          id: Date.now(),
+          requester: meId,
+          requester_username: myUname,
+          requester_name: me.display_name || me.username,
+          requester_avatar: me.avatar || '🎮',
+          requester_color: me.color || 190,
+          requester_xp: me.xp || 0,
+          addressee: otherId,
+          addressee_username: cleanOther,
+          status: 'pending'
+        });
         LS.set('local_friendships', rows);
         return;
       }
-      const { error } = await this.sb.from('friendships').insert({ requester: this.user.id, addressee: otherId });
+
+      // Modo Supabase online
+      let targetUuid = otherId;
+      if (!/^[0-9a-f-]{36}$/i.test(otherId)) {
+        const { data: prof, error: pErr } = await this.sb.from('profiles').select('id').ilike('username', cleanOther).maybeSingle();
+        if (pErr) throw pErr;
+        if (!prof) throw new Error(`O jogador @${cleanOther} ainda não criou conta no OmniPlay.`);
+        targetUuid = prof.id;
+      }
+      const { error } = await this.sb.from('friendships').insert({ requester: this.user.id, addressee: targetUuid });
       if (error) throw new Error(error.code === '23505' ? 'Já existe um pedido ou amizade com este jogador.' : error.message);
     },
     async acceptRequest(fid) {
