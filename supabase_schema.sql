@@ -103,10 +103,10 @@ alter table public.friendships    enable row level security;
 alter table public.matches        enable row level security;
 alter table public.match_players  enable row level security;
 
--- Perfis: qualquer utilizador autenticado pode ver perfis; só edita o seu
+-- Perfis: qualquer utilizador pode ver perfis públicos; só edita o seu
 drop policy if exists "profiles_select" on public.profiles;
 create policy "profiles_select" on public.profiles
-  for select to authenticated using (true);
+  for select using (true);
 
 drop policy if exists "profiles_update_own" on public.profiles;
 create policy "profiles_update_own" on public.profiles

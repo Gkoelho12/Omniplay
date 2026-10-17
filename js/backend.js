@@ -84,7 +84,7 @@
       if (this.configured) {
         const { data, error } = await this.sb.auth.signUp({
           email: this._email(username), password,
-          options: { data: { username, display_name: username, avatar, color } }
+          options: { data: { username, display_name: display_name || username, avatar, color } }
         });
         if (error) throw new Error(/already|registered/i.test(error.message) ? 'Esse username já existe.' : error.message);
         if (!data.session) throw new Error('Desativa "Confirm email" no Supabase (Authentication > Providers > Email).');

@@ -6,6 +6,6 @@
  */
 window.OMNI_CONFIG = {
   SUPABASE_URL: 'https://phxzjlcqwbhmvpjodmjh.supabase.co',
-  SUPABASE_ANON_KEY: '',          // <- cola aqui a anon key
+  SUPABASE_ANON_KEY: (typeof localStorage !== 'undefined' && localStorage.getItem('omni_supabase_anon_key')) || '', // <- cola aqui a anon key
   EMAIL_DOMAIN: 'omniplay.app'    // login = username@omniplay.app (por baixo)
 };
