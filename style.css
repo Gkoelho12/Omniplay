@@ -1650,6 +1650,83 @@ main#view.enter { animation: viewIn .5s cubic-bezier(.2, .8, .2, 1); }
   font-style: italic;
 }
 
+/* ===================== ABA E CARTÕES DE PEDIDOS RECEBIDOS ===================== */
+.tab-badge.req-alert {
+  background: linear-gradient(135deg, #f43f5e, #e11d48);
+  color: #fff;
+  box-shadow: 0 0 12px rgba(244, 63, 94, 0.6);
+  font-weight: 800;
+}
+.requests-pane-wrap {
+  display: flex;
+  flex-direction: column;
+}
+.incoming-req-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 16px;
+}
+.incoming-req-card {
+  border-radius: 20px;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(244, 63, 94, 0.3);
+  box-shadow: 0 8px 24px rgba(244, 63, 94, 0.08);
+  transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s;
+}
+.incoming-req-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(244, 63, 94, 0.6);
+  box-shadow: 0 12px 30px rgba(244, 63, 94, 0.16);
+}
+.irc-top {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.irc-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 2px;
+}
+.irc-name-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.irc-name-line b {
+  font-size: 1.05rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.irc-sub-text {
+  color: var(--cyan);
+  font-weight: 600;
+  margin-top: 4px;
+}
+.irc-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+.irc-btn-accept {
+  flex: 1;
+  min-width: 130px;
+}
+.empty-requests {
+  padding: 40px 24px;
+  max-width: 500px;
+  margin: 20px auto;
+}
+
 /* ---------- Responsivo ---------- */
 @media (max-width: 860px) {
   .cols, .lobby-grid { grid-template-columns: 1fr; }

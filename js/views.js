@@ -47,7 +47,7 @@
       const li = levelInfo(me.xp);
       const hostUrl = `${location.origin}${location.pathname.replace(/\/$/, '')}`;
       const inviteUrl = `${hostUrl}#add-friend?u=${encodeURIComponent(me.username)}`;
-      const initialTab = params.tab || ((params.u || params.username) ? 'add' : 'friends');
+      const initialTab = params.tab || (params.u || params.username ? 'add' : 'friends');
 
       root.innerHTML = `<section class="page friends-page">
         <div class="page-head friends-head">
@@ -60,21 +60,24 @@
           </div>
         </div>
 
-        <!-- Segmented Tab Switcher -->
+        <!-- Segmented Tab Switcher (3 Abas dedicadas) -->
         <div class="friend-tabs-wrap">
           <div class="friend-tabs glass">
             <button class="tab-btn ${initialTab === 'friends' ? 'active' : ''}" data-tab="friends" id="tab-btn-friends">
               <span>👥 Os Teus Amigos</span>
               <span class="tab-badge" id="tab-fr-badge">0</span>
             </button>
+            <button class="tab-btn ${initialTab === 'requests' ? 'active' : ''}" data-tab="requests" id="tab-btn-requests">
+              <span>📬 Pedidos Recebidos</span>
+              <span class="tab-badge pulse req-alert" id="tab-req-badge" hidden>0</span>
+            </button>
             <button class="tab-btn ${initialTab === 'add' ? 'active' : ''}" data-tab="add" id="tab-btn-add">
               <span>➕ Adicionar Amigo</span>
-              <span class="tab-badge pulse" id="tab-req-badge" hidden>0</span>
             </button>
           </div>
         </div>
 
-        <!-- Conteúdo Aba: Os Teus Amigos -->
+        <!-- Conteúdo Aba 1: Os Teus Amigos -->
         <div id="tab-content-friends" class="tab-pane ${initialTab === 'friends' ? 'active' : ''}">
           <div class="friends-toolbar">
             <div class="fr-filter-pills">
@@ -89,7 +92,25 @@
           <div id="fr-friends-container">${loading()}</div>
         </div>
 
-        <!-- Conteúdo Aba: Adicionar Amigos -->
+        <!-- Conteúdo Aba 2: Pedidos Recebidos (Dedicada) -->
+        <div id="tab-content-requests" class="tab-pane ${initialTab === 'requests' ? 'active' : ''}">
+          <div class="requests-pane-wrap">
+            <div class="requests-pane-head mb-16">
+              <div>
+                <h3 class="sec-title">📬 Pedidos de Amizade Recebidos</h3>
+                <p class="muted small">Jogadores que querem ser teus amigos e jogar contigo no OmniPlay.</p>
+              </div>
+            </div>
+
+            <!-- Pedidos Recebidos -->
+            <div id="fr-incoming-box" class="pending-section mb-24">${loading()}</div>
+
+            <!-- Pedidos Enviados Pendentes -->
+            <div id="fr-outgoing-box" class="pending-section"></div>
+          </div>
+        </div>
+
+        <!-- Conteúdo Aba 3: Adicionar Amigos -->
         <div id="tab-content-add" class="tab-pane ${initialTab === 'add' ? 'active' : ''}">
           <!-- Cartão de Partilha Pessoal -->
           <div class="share-card glass">
@@ -127,12 +148,6 @@
             <div id="fr-search-results" class="search-results-box"></div>
           </div>
 
-          <!-- Pedidos Recebidos Pendentes -->
-          <div id="fr-incoming-box" class="pending-section"></div>
-
-          <!-- Pedidos Enviados Pendentes -->
-          <div id="fr-outgoing-box" class="pending-section"></div>
-
           <!-- Sugestões da Comunidade -->
           <div id="fr-suggestions-box" class="suggest-section"></div>
         </div>
@@ -140,21 +155,26 @@
 
       // Wiring Tabs
       const tabFriendsBtn = $('#tab-btn-friends');
+      const tabRequestsBtn = $('#tab-btn-requests');
       const tabAddBtn = $('#tab-btn-add');
       const paneFriends = $('#tab-content-friends');
+      const paneRequests = $('#tab-content-requests');
       const paneAdd = $('#tab-content-add');
 
       function switchTab(t) {
-        tabFriendsBtn.classList.toggle('active', t === 'friends');
-        tabAddBtn.classList.toggle('active', t === 'add');
-        paneFriends.classList.toggle('active', t === 'friends');
-        paneAdd.classList.toggle('active', t === 'add');
+        tabFriendsBtn?.classList.toggle('active', t === 'friends');
+        tabRequestsBtn?.classList.toggle('active', t === 'requests');
+        tabAddBtn?.classList.toggle('active', t === 'add');
+        paneFriends?.classList.toggle('active', t === 'friends');
+        paneRequests?.classList.toggle('active', t === 'requests');
+        paneAdd?.classList.toggle('active', t === 'add');
       }
 
-      tabFriendsBtn.onclick = () => switchTab('friends');
-      tabAddBtn.onclick = () => switchTab('add');
-      $('#btn-goto-add').onclick = () => switchTab('add');
-      $('#btn-quick-share').onclick = () => { switchTab('add'); $('#btn-copy-invite').click(); };
+      tabFriendsBtn && (tabFriendsBtn.onclick = () => switchTab('friends'));
+      tabRequestsBtn && (tabRequestsBtn.onclick = () => switchTab('requests'));
+      tabAddBtn && (tabAddBtn.onclick = () => switchTab('add'));
+      $('#btn-goto-add') && ($('#btn-goto-add').onclick = () => switchTab('add'));
+      $('#btn-quick-share') && ($('#btn-quick-share').onclick = () => { switchTab('add'); $('#btn-copy-invite')?.click(); });
 
       // Copiar Link & Partilha
       const copyBtn = $('#btn-copy-invite');
@@ -348,25 +368,39 @@
       if (incomingBox) {
         if (fr.incoming.length) {
           incomingBox.innerHTML = `
-            <div class="section-card glass pad glow-alert">
-              <h3 class="sec-title">📬 Pedidos de Amizade Recebidos <span class="badge">${fr.incoming.length}</span></h3>
-              <div class="pending-list">${fr.incoming.map((i) => `
-                <div class="pending-row" data-fid="${i.fid}">
-                  ${avatar(i.profile, 44)}
-                  <div class="p-info">
-                    <b>${esc(i.profile.display_name)}</b>
-                    <small class="muted">@${esc(i.profile.username)} · Nv ${levelInfo(i.profile.xp).level}</small>
+            <div class="incoming-req-cards-grid">
+              ${fr.incoming.map((i) => `
+                <div class="incoming-req-card glass glow-alert" data-fid="${i.fid}">
+                  <div class="irc-top">
+                    ${avatar(i.profile, 56)}
+                    <div class="irc-info">
+                      <div class="irc-name-line">
+                        <b>${esc(i.profile.display_name)}</b>
+                        <span class="chip mini">Nv ${levelInfo(i.profile.xp).level}</span>
+                      </div>
+                      <small class="muted">@${esc(i.profile.username)}</small>
+                      <span class="irc-sub-text muted small">📬 Quer ser teu amigo no OmniPlay</span>
+                    </div>
                   </div>
-                  <div class="p-actions">
-                    <button class="btn btn-sm btn-neon" data-act="accept" data-fid="${i.fid}">Aceitar 🎉</button>
-                    <button class="btn btn-sm btn-ghost danger" data-act="remove" data-fid="${i.fid}">Recusar</button>
+                  <div class="irc-actions">
+                    <button class="btn btn-sm btn-neon irc-btn-accept" data-act="accept" data-fid="${i.fid}">🎉 Aceitar Pedido</button>
+                    <button class="btn btn-sm btn-ghost" data-act="view-prof" data-pid="${i.profile.id || i.profile.username}">👁️ Ver Perfil</button>
+                    <button class="btn btn-sm btn-ghost danger" data-act="remove" data-fid="${i.fid}" title="Recusar pedido">✕ Recusar</button>
                   </div>
-                </div>`).join('')}</div>
+                </div>`).join('')}
             </div>`;
           $$('[data-act=accept]', incomingBox).forEach((b) => (b.onclick = () => handleAct(() => B.acceptRequest(+b.dataset.fid), 'Agora são amigos! 🎉')));
           $$('[data-act=remove]', incomingBox).forEach((b) => (b.onclick = () => handleAct(() => B.removeFriendship(+b.dataset.fid), 'Pedido recusado.')));
+          $$('[data-act=view-prof]', incomingBox).forEach((b) => (b.onclick = () => goProfile({ id: b.dataset.pid })));
         } else {
-          incomingBox.innerHTML = '';
+          incomingBox.innerHTML = `
+            <div class="empty glass pad text-center empty-requests">
+              <div class="empty-ic" style="font-size:3.5rem;margin-bottom:12px;">📭</div>
+              <h3>Sem pedidos recebidos</h3>
+              <p class="muted mb-16">Não tens nenhum pedido de amizade pendente neste momento.</p>
+              <button class="btn btn-neon" id="btn-goto-add-from-req">➕ Procurar e Adicionar Amigos</button>
+            </div>`;
+          $('#btn-goto-add-from-req', incomingBox)?.addEventListener('click', () => switchTab('add'));
         }
       }
 
@@ -376,6 +410,7 @@
           outgoingBox.innerHTML = `
             <div class="section-card glass pad">
               <h3 class="sec-title muted">📤 Pedidos Enviados Pendentes <small>(${fr.outgoing.length})</small></h3>
+              <p class="muted small mb-12">Jogadores a quem enviaste pedido e que ainda não responderam.</p>
               <div class="pending-list">${fr.outgoing.map((i) => `
                 <div class="pending-row" data-fid="${i.fid}">
                   ${avatar(i.profile, 44)}
