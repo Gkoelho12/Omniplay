@@ -112,7 +112,12 @@ drop policy if exists "profiles_update_own" on public.profiles;
 create policy "profiles_update_own" on public.profiles
   for update to authenticated using (id = auth.uid()) with check (id = auth.uid());
 
--- XP e moedas NÃO podem ser alterados diretamente pelo cliente
+drop policy if exists "profiles_insert_own" on public.profiles;
+create policy "profiles_insert_own" on public.profiles
+  for insert to authenticated with check (id = auth.uid());
+
+-- Permissões de escrita
+grant insert on public.profiles to authenticated;
 revoke update on public.profiles from authenticated, anon;
 grant  update (display_name, avatar, color, bio) on public.profiles to authenticated;
 

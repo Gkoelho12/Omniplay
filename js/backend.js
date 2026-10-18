@@ -162,7 +162,24 @@
 
       if (this.configured) {
         const { data, error } = await this.sb.auth.signInWithPassword({ email: this._email(username), password });
-        if (error) throw new Error(/invalid/i.test(error.message) ? 'Username ou password incorretos.' : error.message);
+        if (error) {
+          // Se falhou no Supabase mas o utilizador tinha uma conta criada em modo local, promove automaticamente para o Supabase:
+          const localAcc = (LS.get('accounts', {}) || {})[username];
+          if (localAcc && localAcc.password === password) {
+            try {
+              const { data: upData, error: upErr } = await this.sb.auth.signUp({
+                email: this._email(username), password,
+                options: { data: { username, display_name: localAcc.display_name || username, avatar: localAcc.avatar, color: localAcc.color } }
+              });
+              if (!upErr && upData?.user) {
+                await this.refreshProfile(upData.user.id);
+                this._afterLogin();
+                return this.user;
+              }
+            } catch { /* erro normal abaixo */ }
+          }
+          throw new Error(/invalid/i.test(error.message) ? 'Username ou password incorretos.' : error.message);
+        }
         await this.refreshProfile(data.user.id);
         this._afterLogin();
         return this.user;
@@ -196,12 +213,39 @@
     async refreshProfile(id) {
       id = id || this.user?.id;
       if (!this.sb) return this.user;
-      const { data, error } = await this.sb.from('profiles').select('*').eq('id', id).single();
-      if (error) throw error;
-      this.user = data;
-      LS.set('profile', data);
+
+      let res = null;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const { data } = await this.sb.from('profiles').select('*').eq('id', id).maybeSingle();
+        if (data) { res = data; break; }
+        await new Promise((r) => setTimeout(r, 200));
+      }
+
+      if (!res) {
+        // Se o trigger demorou ou falhou, garante inserção com base na sessão autenticada:
+        try {
+          const session = (await this.sb.auth.getSession()).data?.session;
+          if (session && session.user && session.user.id === id) {
+            const meta = session.user.user_metadata || {};
+            const uname = (meta.username || session.user.email?.split('@')[0] || 'jogador').toLowerCase();
+            const payload = {
+              id: session.user.id,
+              username: uname,
+              display_name: meta.display_name || uname,
+              avatar: meta.avatar || '🎮',
+              color: typeof meta.color === 'number' ? meta.color : 190
+            };
+            const { data: created } = await this.sb.from('profiles').upsert(payload).select('*').maybeSingle();
+            if (created) res = created;
+          }
+        } catch { /* ignore */ }
+      }
+
+      if (!res) throw new Error('Perfil não encontrado.');
+      this.user = res;
+      LS.set('profile', res);
       this.emit('profile');
-      return data;
+      return res;
     },
 
     async updateProfile(patch) {
@@ -348,11 +392,13 @@
       // Se com ligação ao Supabase: procurar perfis na base de dados
       try {
         const queryTerm = cleanUname || cleanTarget;
-        const { data, error } = await this.sb.from('profiles')
+        let q = this.sb.from('profiles')
           .select('id,username,display_name,avatar,color,xp')
-          .or(`username.ilike.%${queryTerm}%,display_name.ilike.%${cleanTarget}%`)
-          .neq('id', this.user.id)
-          .limit(10);
+          .or(`username.ilike.%${queryTerm}%,display_name.ilike.%${cleanTarget}%`);
+        if (this.user?.id) {
+          q = q.neq('id', this.user.id);
+        }
+        const { data, error } = await q.limit(10);
         if (error) throw error;
         return data || [];
       } catch (err) {
