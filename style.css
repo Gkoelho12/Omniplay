@@ -1727,6 +1727,91 @@ main#view.enter { animation: viewIn .5s cubic-bezier(.2, .8, .2, 1); }
   margin: 20px auto;
 }
 
+.chip.status-pending {
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.12);
+  border: 1px solid rgba(251, 191, 36, 0.4);
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.incoming-invite-banner {
+  border-radius: 20px;
+  padding: 18px 24px;
+  background: linear-gradient(135deg, rgba(34, 211, 238, 0.12), rgba(167, 139, 250, 0.15));
+  border: 1px solid rgba(34, 211, 238, 0.45);
+  box-shadow: 0 10px 30px rgba(34, 211, 238, 0.12);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  animation: pulse-glow 3s infinite ease-in-out;
+}
+
+.iib-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.iib-text h4 {
+  font-size: 1.2rem;
+  margin: 0 0 4px 0;
+  color: #fff;
+}
+
+.iib-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.supabase-config-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px 18px;
+  margin-bottom: 20px;
+  border-radius: 14px;
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  font-size: 0.9rem;
+}
+
+.scb-text {
+  color: #fde68a;
+  line-height: 1.4;
+}
+
+@media (max-width: 640px) {
+  .incoming-invite-banner {
+    flex-direction: column;
+    align-items: stretch;
+    text-align: center;
+    padding: 16px;
+  }
+  .iib-left {
+    flex-direction: column;
+    text-align: center;
+    gap: 10px;
+  }
+  .iib-actions {
+    width: 100%;
+  }
+  .iib-actions button {
+    width: 100%;
+  }
+  .supabase-config-banner {
+    flex-direction: column;
+    align-items: stretch;
+    text-align: center;
+  }
+}
+
 /* ---------- Responsivo ---------- */
 @media (max-width: 860px) {
   .cols, .lobby-grid { grid-template-columns: 1fr; }

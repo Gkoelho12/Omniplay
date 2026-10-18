@@ -279,26 +279,57 @@
         box.innerHTML = `<div class="empty-search muted small">Nenhum jogador encontrado com o nome "<b>${esc(text)}</b>".</div>`;
         return;
       }
-      const friendIds = new Set(fr.friends.map((f) => f.profile.id));
-      const incMap = new Map(fr.incoming.map((i) => [i.profile.id, i.fid]));
-      const outMap = new Map(fr.outgoing.map((o) => [o.profile.id, o.fid]));
+      const friendIds = new Set();
+      const friendUsernames = new Set();
+      (fr.friends || []).forEach((f) => {
+        if (f.profile?.id) {
+          friendIds.add(String(f.profile.id).toLowerCase());
+          friendIds.add(String(f.profile.id).replace(/^usr_/, '').toLowerCase());
+        }
+        if (f.profile?.username) friendUsernames.add(f.profile.username.toLowerCase());
+      });
+
+      const incMap = new Map();
+      (fr.incoming || []).forEach((i) => {
+        if (i.profile?.id) {
+          incMap.set(String(i.profile.id).toLowerCase(), i.fid);
+          incMap.set(String(i.profile.id).replace(/^usr_/, '').toLowerCase(), i.fid);
+        }
+        if (i.profile?.username) incMap.set(i.profile.username.toLowerCase(), i.fid);
+      });
+
+      const outMap = new Map();
+      (fr.outgoing || []).forEach((o) => {
+        if (o.profile?.id) {
+          outMap.set(String(o.profile.id).toLowerCase(), o.fid);
+          outMap.set(String(o.profile.id).replace(/^usr_/, '').toLowerCase(), o.fid);
+        }
+        if (o.profile?.username) outMap.set(o.profile.username.toLowerCase(), o.fid);
+      });
+
       const me = B.me();
 
       box.innerHTML = users.map((u) => {
-        const isMe = me && (u.id === me.id || u.username === me.username || (me.username && (u.id === 'usr_' + me.username || u.username === me.username)));
+        const uId = String(u.id || '').toLowerCase();
+        const uCleanId = uId.replace(/^usr_/, '');
+        const uName = String(u.username || '').toLowerCase();
+
+        const isMe = me && (uId === String(me.id || '').toLowerCase() || uName === String(me.username || '').toLowerCase());
+        const isFriend = friendIds.has(uId) || friendIds.has(uCleanId) || friendUsernames.has(uName);
+        const incFid = incMap.get(uId) || incMap.get(uCleanId) || incMap.get(uName);
+        const outFid = outMap.get(uId) || outMap.get(uCleanId) || outMap.get(uName);
+
         let actionHtml = '';
         if (isMe) {
           actionHtml = `<span class="chip">(És tu)</span>`;
-        } else if (friendIds.has(u.id) || friendIds.has(u.username) || (u.id && friendIds.has(u.id.replace(/^usr_/, '')))) {
+        } else if (isFriend) {
           actionHtml = `<span class="chip good">✓ Amigos</span><button class="btn btn-sm btn-ghost" data-act="view" data-u="${esc(u.username)}">Ver Perfil</button>`;
-        } else if (incMap.has(u.id) || incMap.has(u.username)) {
-          const fid = incMap.get(u.id) || incMap.get(u.username);
-          actionHtml = `<button class="btn btn-sm btn-neon" data-act="accept" data-fid="${fid}">Aceitar Pedido 🎉</button>`;
-        } else if (outMap.has(u.id) || outMap.has(u.username) || (u.id && outMap.has(u.id.replace(/^usr_/, '')))) {
-          const fid = outMap.get(u.id) || outMap.get(u.username) || outMap.get(u.id.replace(/^usr_/, ''));
-          actionHtml = `<span class="chip">Pedido enviado ⏳</span><button class="btn btn-sm btn-ghost danger" data-act="cancel" data-fid="${fid}">Cancelar</button>`;
+        } else if (incFid !== undefined) {
+          actionHtml = `<button class="btn btn-sm btn-neon" data-act="accept" data-fid="${incFid}">Aceitar Pedido 🎉</button>`;
+        } else if (outFid !== undefined) {
+          actionHtml = `<span class="chip status-pending">⏳ Pedido enviado (Pendente)</span><button class="btn btn-sm btn-ghost danger" data-act="cancel" data-fid="${outFid}">Cancelar</button>`;
         } else {
-          actionHtml = `<button class="btn btn-sm btn-neon" data-act="add" data-id="${u.id}" data-name="${esc(u.display_name)}">➕ Adicionar Amigo</button>`;
+          actionHtml = `<button class="btn btn-sm btn-neon" data-act="add" data-id="${u.id}" data-username="${esc(u.username)}" data-name="${esc(u.display_name || u.username)}">➕ Adicionar Amigo</button>`;
         }
 
         const subtitle = `@${esc(u.username)} · Nv ${levelInfo(u.xp).level}`;
@@ -314,18 +345,33 @@
       }).join('');
 
       $$('[data-act=view]', box).forEach((b) => (b.onclick = () => goProfile({ username: b.dataset.u })));
-      $$('[data-act=accept]', box).forEach((b) => (b.onclick = () => handleAct(() => B.acceptRequest(+b.dataset.fid), 'Pedido aceite! Agora são amigos. 🎉')));
-      $$('[data-act=cancel]', box).forEach((b) => (b.onclick = () => handleAct(() => B.removeFriendship(+b.dataset.fid), 'Pedido cancelado.')));
+      $$('[data-act=accept]', box).forEach((b) => (b.onclick = () => handleAct(() => B.acceptRequest(b.dataset.fid), 'Pedido aceite! Agora são amigos. 🎉')));
+      $$('[data-act=cancel]', box).forEach((b) => (b.onclick = () => handleAct(() => B.removeFriendship(b.dataset.fid), 'Pedido cancelado.')));
       $$('[data-act=add]', box).forEach((b) => (b.onclick = async () => {
         b.disabled = true;
+        b.textContent = 'A enviar…';
         try {
-          await B.sendRequest(b.dataset.id);
-          toast(`Pedido de amizade enviado a <b>${b.dataset.name}</b>!`, { type: 'good' });
-          loadData();
-          execSearch($('#fr-search-input')?.value || '');
+          const targetId = b.dataset.id;
+          const targetUname = b.dataset.username;
+          const targetName = b.dataset.name;
+          const targetUser = users.find((x) => String(x.id) === targetId || x.username === targetUname) || {
+            id: targetId, username: targetUname, display_name: targetName
+          };
+          await B.sendRequest(targetId, targetUser);
+          toast(`Pedido de amizade enviado a <b>${esc(targetName)}</b>!`, { type: 'good' });
+
+          const row = b.closest('.user-search-row');
+          if (row) {
+            const actWrap = row.querySelector('.usr-actions');
+            if (actWrap) {
+              actWrap.innerHTML = `<span class="chip status-pending">⏳ Pedido enviado (Pendente)</span>`;
+            }
+          }
+          await loadData();
         } catch (e) {
           toast(e.message, { type: 'bad' });
           b.disabled = false;
+          b.textContent = '➕ Adicionar Amigo';
         }
       }));
     } catch (e) {

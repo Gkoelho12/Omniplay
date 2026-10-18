@@ -174,6 +174,7 @@
         }
         m.close();
         renderUserPill();
+        await checkAndAcceptPendingInvite();
         renderAmigosPage();
       } catch (err) {
         $('#au-err', el).textContent = err.message || 'Erro na autenticação';
@@ -183,13 +184,130 @@
     };
   }
 
+  async function checkAndAcceptPendingInvite() {
+    try {
+      const raw = sessionStorage.getItem('omni_pending_invite');
+      if (!raw) return;
+      sessionStorage.removeItem('omni_pending_invite');
+      const inv = JSON.parse(raw);
+      if (!inv || !inv.username) return;
+
+      const me = B.me();
+      if (!me || (me.username && me.username.toLowerCase() === inv.username.toLowerCase())) return;
+
+      if (!B.canNet) {
+        const rows = LS.get('local_friendships', []);
+        const myUname = (me.username || '').toLowerCase();
+        const targetUname = inv.username.toLowerCase();
+        let r = rows.find((x) =>
+          (x.requester_username === targetUname && x.addressee_username === myUname) ||
+          (x.requester_username === myUname && x.addressee_username === targetUname)
+        );
+        if (r) {
+          r.status = 'accepted';
+        } else {
+          rows.push({
+            id: Date.now(),
+            requester: 'usr_' + targetUname,
+            requester_username: targetUname,
+            requester_name: inv.name || targetUname,
+            requester_avatar: inv.avatar || '🎮',
+            requester_color: inv.color !== undefined ? inv.color : 190,
+            requester_xp: 50,
+            addressee: me.id || me.username,
+            addressee_username: myUname,
+            addressee_name: me.display_name || me.username,
+            addressee_avatar: me.avatar || '🎮',
+            addressee_color: me.color !== undefined ? me.color : 190,
+            addressee_xp: me.xp || 0,
+            status: 'accepted',
+            created_at: new Date().toISOString()
+          });
+        }
+        LS.set('local_friendships', rows);
+        toast(`Agora és amigo de <b>${esc(inv.name || inv.username)}</b>! 🎉`, { type: 'good', ms: 5000 });
+      } else {
+        try {
+          await B.sendRequest(inv.username);
+        } catch { /* ignore */ }
+      }
+    } catch (e) {
+      console.warn('Error handling pending invite:', e);
+    }
+  }
+
+  function openSupabaseConfigModal() {
+    const currentKey = (typeof localStorage !== 'undefined' && localStorage.getItem('omni_supabase_anon_key')) || '';
+    const m = openModal(`
+      <div class="auth">
+        <div class="auth-head">
+          <div class="auth-logo-aura">
+            <span style="font-size:2.2rem;">⚡</span>
+          </div>
+          <h2>Ligar Base de Dados Supabase</h2>
+          <p class="muted small">Ativa o Supabase para sincronizar jogadores entre diferentes computadores e telemóveis!</p>
+        </div>
+        <div class="pad-12 glass mb-16" style="border-radius:12px;font-size:0.85rem;line-height:1.5;">
+          <div style="margin-bottom:6px;"><b>1.</b> Abre o teu dashboard do Supabase (<b>phxzjlcqwbhmvpjodmjh</b>).</div>
+          <div style="margin-bottom:6px;"><b>2.</b> Vai a <b>Project Settings</b> ➔ <b>API</b> ➔ <b>Project API Keys</b>.</div>
+          <div><b>3.</b> Copia a chave <b>anon public</b> (começa por <code>eyJhbGciOi...</code>).</div>
+        </div>
+        <label class="field">
+          <span>Supabase Anon Public Key</span>
+          <textarea id="sb-key-input" rows="3" class="share-input" style="font-family:monospace;font-size:0.8rem;resize:vertical;" placeholder="Cola aqui a tua anon key (eyJhbGciOi...)">${esc(currentKey)}</textarea>
+        </label>
+        <div class="form-actions mt-16">
+          <button class="btn btn-neon w-full btn-lg" id="btn-save-sb-key">Guardar e Ligar ao Supabase 🚀</button>
+        </div>
+      </div>`, { cls: 'modal-auth' });
+
+    $('#btn-save-sb-key', m.el).onclick = () => {
+      const val = ($('#sb-key-input', m.el).value || '').trim();
+      if (!val) {
+        toast('Por favor cola a chave anon do Supabase.', { type: 'warn' });
+        return;
+      }
+      B.setSupabaseKey(val);
+      toast('Chave Supabase guardada! A reiniciar ligação...', { type: 'good' });
+      m.close();
+      setTimeout(() => location.reload(), 600);
+    };
+  }
+
   function renderAmigosPage() {
     const root = $('#amigos-root');
     if (!root) return;
 
+    const urlParams = new URLSearchParams(location.search);
+    const inviterUname = (urlParams.get('invite') || urlParams.get('u') || urlParams.get('add') || urlParams.get('username') || '').trim();
+    const inviterName = urlParams.get('name') || inviterUname;
+    const inviterAvatar = urlParams.get('av') || '🎮';
+    const inviterColor = parseInt(urlParams.get('c'), 10) || 190;
+
     if (!B.account) {
+      if (inviterUname) {
+        sessionStorage.setItem('omni_pending_invite', JSON.stringify({
+          username: inviterUname, name: inviterName, avatar: inviterAvatar, color: inviterColor
+        }));
+      }
+
+      const inviteHeroHtml = inviterUname ? `
+        <div class="incoming-invite-banner glass glow-accent mb-24">
+          <div class="iib-left">
+            ${avatar({ avatar: inviterAvatar, color: inviterColor }, 60)}
+            <div class="iib-text">
+              <h4>🎉 Convite de Amizade de ${esc(inviterName)}</h4>
+              <p class="muted small">@${esc(inviterUname)} convidou-te para serem amigos e jogarem Mexicana no OmniPlay!</p>
+            </div>
+          </div>
+          <div class="iib-actions">
+            <button class="btn btn-neon btn-lg" id="btn-login-invite">🔑 Criar Conta / Entrar para Aceitar</button>
+          </div>
+        </div>` : '';
+
       root.innerHTML = `
         <div class="glass fr-guest-hero">
+          ${inviteHeroHtml}
           <div class="fgh-icon">🤝</div>
           <h2>Adicionar e Conectar Amigos</h2>
           <p class="muted">Entra na tua conta para adicionar amigos, partilhar o teu código pessoal e desafiá-los para jogar Mexicana!</p>
@@ -203,19 +321,43 @@
           </div>
         </div>`;
       $('#btn-login-cta').onclick = () => openAuth('login');
+      if ($('#btn-login-invite')) $('#btn-login-invite').onclick = () => openAuth('register');
       return;
     }
 
     const me = B.me();
     const li = levelInfo(me.xp);
-    const hostUrl = `${location.origin}${location.pathname.replace(/\/$/, '')}`;
-    const inviteUrl = `${hostUrl}?u=${encodeURIComponent(me.username)}`;
+    const hostUrl = `${location.origin}/amigos.html`;
+    const inviteUrl = `${hostUrl}?invite=${encodeURIComponent(me.username)}&name=${encodeURIComponent(me.display_name || me.username)}&av=${encodeURIComponent(me.avatar || '🎮')}&c=${me.color !== undefined ? me.color : 190}`;
 
-    const urlParams = new URLSearchParams(location.search);
-    const searchTarget = urlParams.get('u') || urlParams.get('add') || urlParams.get('username') || '';
+    const searchTarget = inviterUname || '';
     const initialTab = urlParams.get('tab') === 'friends' ? 'friends' : (urlParams.get('tab') === 'requests' ? 'requests' : 'add');
 
+    const sbNoticeHtml = !B.configured ? `
+      <div class="supabase-config-banner glass">
+        <div class="scb-text">
+          <span>⚡ <b>Modo Local ativo</b> · Queres ligar ao Supabase para que os utilizadores de outros dispositivos apareçam na pesquisa?</span>
+        </div>
+        <button class="btn btn-sm btn-ghost" id="btn-open-sb-config" type="button">🔑 Ligar Supabase</button>
+      </div>` : '';
+
+    const inviteBannerHtml = (inviterUname && inviterUname.toLowerCase() !== me.username.toLowerCase()) ? `
+      <div class="incoming-invite-banner glass glow-accent mb-20" id="invite-top-banner">
+        <div class="iib-left">
+          ${avatar({ avatar: inviterAvatar, color: inviterColor }, 56)}
+          <div class="iib-text">
+            <h4>📬 Pedido de Amizade de ${esc(inviterName)}</h4>
+            <p class="muted small">@${esc(inviterUname)} enviou-te um link de convite para serem amigos!</p>
+          </div>
+        </div>
+        <div class="iib-actions">
+          <button class="btn btn-neon btn-lg" id="btn-accept-invite-banner">🎉 Aceitar Pedido de Amizade</button>
+        </div>
+      </div>` : '';
+
     root.innerHTML = `
+      ${sbNoticeHtml}
+      ${inviteBannerHtml}
       <div class="page-head friends-head">
         <div>
           <h2>Adicionar Amigos</h2>
@@ -380,6 +522,63 @@
       };
     }
 
+    // Wiring banner e Supabase modal
+    const sbBtn = $('#btn-open-sb-config');
+    if (sbBtn) sbBtn.onclick = openSupabaseConfigModal;
+
+    const acceptInvBtn = $('#btn-accept-invite-banner');
+    if (acceptInvBtn) {
+      acceptInvBtn.onclick = async () => {
+        acceptInvBtn.disabled = true;
+        acceptInvBtn.textContent = 'A aceitar…';
+        try {
+          if (!B.canNet) {
+            const rows = LS.get('local_friendships', []);
+            const myUname = (me.username || '').toLowerCase();
+            const targetUname = inviterUname.toLowerCase();
+            let r = rows.find((x) =>
+              (x.requester_username === targetUname && x.addressee_username === myUname) ||
+              (x.requester_username === myUname && x.addressee_username === targetUname)
+            );
+            if (r) {
+              r.status = 'accepted';
+            } else {
+              rows.push({
+                id: Date.now(),
+                requester: 'usr_' + targetUname,
+                requester_username: targetUname,
+                requester_name: inviterName || targetUname,
+                requester_avatar: inviterAvatar,
+                requester_color: inviterColor,
+                requester_xp: 50,
+                addressee: me.id || me.username,
+                addressee_username: myUname,
+                addressee_name: me.display_name || me.username,
+                addressee_avatar: me.avatar || '🎮',
+                addressee_color: me.color !== undefined ? me.color : 190,
+                addressee_xp: me.xp || 0,
+                status: 'accepted',
+                created_at: new Date().toISOString()
+              });
+            }
+            LS.set('local_friendships', rows);
+          } else {
+            try {
+              await B.sendRequest(inviterUname);
+            } catch { /* ignore */ }
+          }
+          toast(`Agora és amigo de <b>${esc(inviterName || inviterUname)}</b>! 🎉`, { type: 'good', ms: 5000 });
+          $('#invite-top-banner')?.remove();
+          switchTab('friends');
+          await loadData();
+        } catch (err) {
+          toast(err.message, { type: 'bad' });
+          acceptInvBtn.disabled = false;
+          acceptInvBtn.textContent = '🎉 Aceitar Pedido de Amizade';
+        }
+      };
+    }
+
     // Search wiring
     const searchInp = $('#fr-search-input');
     const clearBtn = $('#fr-search-clear');
@@ -416,26 +615,58 @@
         box.innerHTML = `<div class="empty-search muted small">Nenhum jogador encontrado com o nome "<b>${esc(text)}</b>".</div>`;
         return;
       }
-      const friendIds = new Set(fr.friends.map((f) => f.profile.id));
-      const incMap = new Map(fr.incoming.map((i) => [i.profile.id, i.fid]));
-      const outMap = new Map(fr.outgoing.map((o) => [o.profile.id, o.fid]));
+
+      const friendIds = new Set();
+      const friendUsernames = new Set();
+      (fr.friends || []).forEach((f) => {
+        if (f.profile?.id) {
+          friendIds.add(String(f.profile.id).toLowerCase());
+          friendIds.add(String(f.profile.id).replace(/^usr_/, '').toLowerCase());
+        }
+        if (f.profile?.username) friendUsernames.add(f.profile.username.toLowerCase());
+      });
+
+      const incMap = new Map();
+      (fr.incoming || []).forEach((i) => {
+        if (i.profile?.id) {
+          incMap.set(String(i.profile.id).toLowerCase(), i.fid);
+          incMap.set(String(i.profile.id).replace(/^usr_/, '').toLowerCase(), i.fid);
+        }
+        if (i.profile?.username) incMap.set(i.profile.username.toLowerCase(), i.fid);
+      });
+
+      const outMap = new Map();
+      (fr.outgoing || []).forEach((o) => {
+        if (o.profile?.id) {
+          outMap.set(String(o.profile.id).toLowerCase(), o.fid);
+          outMap.set(String(o.profile.id).replace(/^usr_/, '').toLowerCase(), o.fid);
+        }
+        if (o.profile?.username) outMap.set(o.profile.username.toLowerCase(), o.fid);
+      });
+
       const me = B.me();
 
       box.innerHTML = users.map((u) => {
-        const isMe = me && (u.id === me.id || u.username === me.username || (me.username && (u.id === 'usr_' + me.username || u.username === me.username)));
+        const uId = String(u.id || '').toLowerCase();
+        const uCleanId = uId.replace(/^usr_/, '');
+        const uName = String(u.username || '').toLowerCase();
+
+        const isMe = me && (uId === String(me.id || '').toLowerCase() || uName === String(me.username || '').toLowerCase());
+        const isFriend = friendIds.has(uId) || friendIds.has(uCleanId) || friendUsernames.has(uName);
+        const incFid = incMap.get(uId) || incMap.get(uCleanId) || incMap.get(uName);
+        const outFid = outMap.get(uId) || outMap.get(uCleanId) || outMap.get(uName);
+
         let actionHtml = '';
         if (isMe) {
           actionHtml = `<span class="chip">(És tu)</span>`;
-        } else if (friendIds.has(u.id) || friendIds.has(u.username) || (u.id && friendIds.has(u.id.replace(/^usr_/, '')))) {
+        } else if (isFriend) {
           actionHtml = `<span class="chip good">✓ Amigos</span><button class="btn btn-sm btn-ghost" data-act="view-prof" data-pid="${u.id || u.username}">Ver Perfil</button>`;
-        } else if (incMap.has(u.id) || incMap.has(u.username)) {
-          const fid = incMap.get(u.id) || incMap.get(u.username);
-          actionHtml = `<button class="btn btn-sm btn-neon" data-act="accept" data-fid="${fid}">Aceitar Pedido 🎉</button>`;
-        } else if (outMap.has(u.id) || outMap.has(u.username) || (u.id && outMap.has(u.id.replace(/^usr_/, '')))) {
-          const fid = outMap.get(u.id) || outMap.get(u.username) || outMap.get(u.id.replace(/^usr_/, ''));
-          actionHtml = `<span class="chip">Pedido enviado ⏳</span><button class="btn btn-sm btn-ghost danger" data-act="cancel" data-fid="${fid}">Cancelar</button>`;
+        } else if (incFid !== undefined) {
+          actionHtml = `<button class="btn btn-sm btn-neon" data-act="accept" data-fid="${incFid}">Aceitar Pedido 🎉</button>`;
+        } else if (outFid !== undefined) {
+          actionHtml = `<span class="chip status-pending">⏳ Pedido enviado (Pendente)</span><button class="btn btn-sm btn-ghost danger" data-act="cancel" data-fid="${outFid}">Cancelar</button>`;
         } else {
-          actionHtml = `<button class="btn btn-sm btn-neon" data-act="add" data-id="${u.id}" data-name="${esc(u.display_name)}">➕ Adicionar Amigo</button>`;
+          actionHtml = `<button class="btn btn-sm btn-neon" data-act="add" data-id="${u.id}" data-username="${esc(u.username)}" data-name="${esc(u.display_name || u.username)}">➕ Adicionar Amigo</button>`;
         }
 
         const subtitle = `@${esc(u.username)} · Nv ${levelInfo(u.xp).level}`;
@@ -451,18 +682,33 @@
       }).join('');
 
       $$('[data-act=view-prof]', box).forEach((b) => (b.onclick = () => openFriendProfileModal(b.dataset.pid)));
-      $$('[data-act=accept]', box).forEach((b) => (b.onclick = () => handleAct(() => B.acceptRequest(+b.dataset.fid), 'Pedido aceite! Agora são amigos. 🎉')));
-      $$('[data-act=cancel]', box).forEach((b) => (b.onclick = () => handleAct(() => B.removeFriendship(+b.dataset.fid), 'Pedido cancelado.')));
+      $$('[data-act=accept]', box).forEach((b) => (b.onclick = () => handleAct(() => B.acceptRequest(b.dataset.fid), 'Pedido aceite! Agora são amigos. 🎉')));
+      $$('[data-act=cancel]', box).forEach((b) => (b.onclick = () => handleAct(() => B.removeFriendship(b.dataset.fid), 'Pedido cancelado.')));
       $$('[data-act=add]', box).forEach((b) => (b.onclick = async () => {
         b.disabled = true;
+        b.textContent = 'A enviar…';
         try {
-          await B.sendRequest(b.dataset.id);
-          toast(`Pedido de amizade enviado a <b>${b.dataset.name}</b>!`, { type: 'good' });
-          loadData();
-          execSearch($('#fr-search-input')?.value || '');
+          const targetId = b.dataset.id;
+          const targetUname = b.dataset.username;
+          const targetName = b.dataset.name;
+          const targetUser = users.find((x) => String(x.id) === targetId || x.username === targetUname) || {
+            id: targetId, username: targetUname, display_name: targetName
+          };
+          await B.sendRequest(targetId, targetUser);
+          toast(`Pedido de amizade enviado a <b>${esc(targetName)}</b>!`, { type: 'good' });
+
+          const row = b.closest('.user-search-row');
+          if (row) {
+            const actWrap = row.querySelector('.usr-actions');
+            if (actWrap) {
+              actWrap.innerHTML = `<span class="chip status-pending">⏳ Pedido enviado (Pendente)</span>`;
+            }
+          }
+          await loadData();
         } catch (e) {
           toast(e.message, { type: 'bad' });
           b.disabled = false;
+          b.textContent = '➕ Adicionar Amigo';
         }
       }));
     } catch (e) {

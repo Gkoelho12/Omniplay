@@ -24,7 +24,9 @@
 
     /* ============ Arranque ============ */
     async init() {
-      this.configured = !!(CFG.SUPABASE_ANON_KEY && window.supabase);
+      const savedKey = (typeof localStorage !== 'undefined' && localStorage.getItem('omni_supabase_anon_key')) || '';
+      const effectiveKey = CFG.SUPABASE_ANON_KEY || savedKey;
+      this.configured = !!(effectiveKey && window.supabase);
       this.guest = LS.get('guest', null) || {
         id: null, username: 'convidado', display_name: 'Convidado',
         avatar: AVATARS[Math.floor(Math.random() * AVATARS.length)], color: Math.floor(Math.random() * 360),
@@ -36,7 +38,7 @@
       const isLoggedIn = LS.get('loggedIn', false);
 
       if (this.configured) {
-        this.sb = window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY, {
+        this.sb = window.supabase.createClient(CFG.SUPABASE_URL, effectiveKey, {
           auth: { persistSession: true, autoRefreshToken: true, storageKey: 'omni.auth' },
           realtime: { params: { eventsPerSecond: 20 } }
         });
@@ -61,6 +63,18 @@
       if (this.user) { this.flushQueue(); this.joinHub(); }
     },
 
+    setSupabaseKey(key) {
+      key = (key || '').trim();
+      if (!key) return false;
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('omni_supabase_anon_key', key);
+      }
+      if (window.OMNI_CONFIG) {
+        window.OMNI_CONFIG.SUPABASE_ANON_KEY = key;
+      }
+      return true;
+    },
+
     /* ============ Autenticação ============ */
     _email(username) { return `${username}@${CFG.EMAIL_DOMAIN || 'omniplay.app'}`; },
     validUsername(u) { return /^[a-z0-9_]{3,16}$/.test(u); },
@@ -76,15 +90,33 @@
       }));
     },
 
-    async signUp(username, password, avatar, color) {
+    async signUp(username, password, arg3, arg4, arg5) {
       username = (username || '').trim().toLowerCase();
       if (!this.validUsername(username)) throw new Error('Username deve ter 3 a 16 caracteres (letras, números ou _).');
       if (!password || password.length < 4) throw new Error('A password precisa de pelo menos 4 caracteres.');
 
+      let displayName = username;
+      let avatar = AVATARS[0];
+      let color = 190;
+
+      if (arg5 !== undefined) {
+        // signUp(u, p, dn, avatar, color)
+        displayName = (arg3 || '').trim() || username;
+        avatar = arg4 || AVATARS[0];
+        color = typeof arg5 === 'number' ? arg5 : 190;
+      } else if (typeof arg4 === 'number') {
+        // signUp(u, p, avatar, color)
+        avatar = arg3 || AVATARS[0];
+        color = arg4;
+      } else if (arg3) {
+        avatar = arg3;
+        color = typeof arg4 === 'number' ? arg4 : 190;
+      }
+
       if (this.configured) {
         const { data, error } = await this.sb.auth.signUp({
           email: this._email(username), password,
-          options: { data: { username, display_name: display_name || username, avatar, color } }
+          options: { data: { username, display_name: displayName, avatar, color } }
         });
         if (error) throw new Error(/already|registered/i.test(error.message) ? 'Esse username já existe.' : error.message);
         if (!data.session) throw new Error('Desativa "Confirm email" no Supabase (Authentication > Providers > Email).');
@@ -104,7 +136,7 @@
       const newAccount = {
         id: 'loc_' + uid(12),
         username,
-        display_name: username,
+        display_name: displayName,
         password,
         avatar: avatar || AVATARS[0],
         color: typeof color === 'number' ? color : Math.floor(Math.random() * 360),
@@ -244,7 +276,7 @@
       if (!raw) return [];
 
       const norm = (s) => (s || '').toString().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
-      const cleanTarget = norm(raw);
+      const cleanTarget = norm(raw.replace(/^@/, ''));
       const cleanUname = raw.replace(/^@/, '').toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 20);
 
       const me = this.me();
@@ -253,16 +285,20 @@
 
       const results = [];
       const seen = new Set();
-      if (meId) seen.add(meId);
+      if (meId) {
+        seen.add(String(meId).toLowerCase());
+        seen.add(String(meId).replace(/^usr_/, '').toLowerCase());
+      }
       if (meUname) seen.add(meUname);
 
       if (!this.canNet) {
         const accounts = LS.get('accounts', {});
-        // Procurar estritamente nas contas registadas que existem no dispositivo
+        // Procurar nas contas registadas e conhecidas neste dispositivo
         Object.values(accounts).forEach((a) => {
-          const aid = a.id || a.username;
+          const aid = String(a.id || a.username).toLowerCase();
           const au = (a.username || '').toLowerCase();
-          if (seen.has(aid) || seen.has(au)) return;
+          if (seen.has(aid) || seen.has(au) || seen.has(aid.replace(/^usr_/, ''))) return;
+
           const matchU = norm(a.username).includes(cleanTarget);
           const matchD = a.display_name && norm(a.display_name).includes(cleanTarget);
           if (matchU || matchD) {
@@ -272,27 +308,55 @@
               id: a.id || a.username,
               username: a.username,
               display_name: a.display_name || a.username,
-              avatar: a.avatar || '🎲',
-              color: a.color || 200,
+              avatar: a.avatar || '🎮',
+              color: a.color ?? 200,
               xp: a.xp || 0
             });
           }
         });
 
-        // O perfil só aparece se o perfil existir (sem cartões virtuais)
+        // Também verificar se há jogadores conhecidos nos pedidos locais (ex: convites recebidos)
+        const rows = LS.get('local_friendships', []);
+        rows.forEach((r) => {
+          const targetU = (r.requester_username === meUname ? r.addressee_username : r.requester_username) || '';
+          const targetName = (r.requester_username === meUname ? r.addressee_name : r.requester_name) || targetU;
+          const targetAv = (r.requester_username === meUname ? r.addressee_avatar : r.requester_avatar) || '👤';
+          const targetCol = (r.requester_username === meUname ? r.addressee_color : r.requester_color) ?? 190;
+          const targetId = (r.requester_username === meUname ? r.addressee : r.requester) || targetU;
+
+          if (!targetU) return;
+          const tuLower = targetU.toLowerCase();
+          if (seen.has(tuLower) || seen.has(String(targetId).toLowerCase())) return;
+
+          if (norm(targetU).includes(cleanTarget) || norm(targetName).includes(cleanTarget)) {
+            seen.add(tuLower);
+            seen.add(String(targetId).toLowerCase());
+            results.push({
+              id: targetId,
+              username: targetU,
+              display_name: targetName,
+              avatar: targetAv,
+              color: targetCol,
+              xp: 0
+            });
+          }
+        });
+
         return results.slice(0, 10);
       }
 
-      // Se com ligação ao Supabase: apenas perfis reais existentes na base de dados
+      // Se com ligação ao Supabase: procurar perfis na base de dados
       try {
+        const queryTerm = cleanUname || cleanTarget;
         const { data, error } = await this.sb.from('profiles')
           .select('id,username,display_name,avatar,color,xp')
-          .or(`username.ilike.%${cleanUname}%,display_name.ilike.%${raw}%`)
+          .or(`username.ilike.%${queryTerm}%,display_name.ilike.%${cleanTarget}%`)
           .neq('id', this.user.id)
           .limit(10);
         if (error) throw error;
         return data || [];
-      } catch {
+      } catch (err) {
+        console.warn('Supabase searchUsers fallback to local:', err);
         return [];
       }
     },
@@ -425,7 +489,7 @@
         const me = this.me();
         const meId = me ? (me.id || me.username) : null;
         const myUname = (me?.username || '').toLowerCase();
-        const myId = (meId || '').toString();
+        const myId = String(meId || '');
         const rows = LS.get('local_friendships', []);
         const accounts = LS.get('accounts', {});
         const out = { friends: [], incoming: [], outgoing: [] };
@@ -442,28 +506,29 @@
             let otherAcc = null;
             if (isReq) {
               const targetUname = addClean;
-              otherAcc = accounts[targetUname] || Object.values(accounts).find((a) => (a.username || '').toLowerCase() === targetUname || a.id === r.addressee);
+              otherAcc = accounts[targetUname] || Object.values(accounts).find((a) => (a.username || '').toLowerCase() === targetUname || String(a.id) === String(r.addressee));
               if (!otherAcc) {
-                const hue = Math.abs(targetUname.split('').reduce((acc, c) => acc + c.charCodeAt(0) * 19, 0)) % 360;
+                const hue = r.addressee_color !== undefined ? r.addressee_color : Math.abs(targetUname.split('').reduce((acc, c) => acc + c.charCodeAt(0) * 19, 0)) % 360;
                 otherAcc = {
-                  id: r.addressee,
+                  id: r.addressee || ('usr_' + targetUname),
                   username: targetUname,
-                  display_name: targetUname.charAt(0).toUpperCase() + targetUname.slice(1),
-                  avatar: '👤',
+                  display_name: r.addressee_name || (targetUname ? targetUname.charAt(0).toUpperCase() + targetUname.slice(1) : 'Amigo'),
+                  avatar: r.addressee_avatar || '👤',
                   color: hue,
-                  xp: 0
+                  xp: r.addressee_xp || 0
                 };
               }
             } else {
               const reqUname = reqClean;
-              otherAcc = accounts[reqUname] || Object.values(accounts).find((a) => (a.username || '').toLowerCase() === reqUname || a.id === r.requester);
+              otherAcc = accounts[reqUname] || Object.values(accounts).find((a) => (a.username || '').toLowerCase() === reqUname || String(a.id) === String(r.requester));
               if (!otherAcc) {
+                const hue = r.requester_color !== undefined ? r.requester_color : 180;
                 otherAcc = {
-                  id: r.requester,
+                  id: r.requester || ('usr_' + reqUname),
                   username: reqUname,
                   display_name: r.requester_name || (reqUname ? reqUname.charAt(0).toUpperCase() + reqUname.slice(1) : 'Amigo'),
                   avatar: r.requester_avatar || '👤',
-                  color: r.requester_color || 180,
+                  color: hue,
                   xp: r.requester_xp || 0
                 };
               }
@@ -499,7 +564,7 @@
           else if (r.addressee === me) out.incoming.push(item);
           else out.outgoing.push(item);
         });
-        out.friends.sort((a, b) => a.profile.username.localeCompare(b.profile.username));
+        out.friends.sort((a, b) => (a.profile?.username || '').localeCompare(b.profile?.username || ''));
         return out;
       });
     },
@@ -510,78 +575,117 @@
       if (!meId) return null;
       const cleanOther = (otherId || '').toString().replace(/^usr_/, '').toLowerCase();
       const myUname = (me.username || '').toLowerCase();
-      const myId = (meId || '').toString();
+      const myId = String(meId);
 
       if (!this.canNet) {
         const rows = LS.get('local_friendships', []);
         const rel = rows.find((r) => {
           const rReq = (r.requester_username || r.requester || '').toString().replace(/^usr_/, '').toLowerCase();
           const rAdd = (r.addressee_username || r.addressee || '').toString().replace(/^usr_/, '').toLowerCase();
-          const isMine = r.requester === myId || rReq === myUname;
-          const isTheirs = r.addressee === myId || rAdd === myUname;
-          const matchesThem = r.addressee === otherId || rAdd === cleanOther;
-          const matchesUs = r.requester === otherId || rReq === cleanOther;
+          const isMine = String(r.requester) === myId || rReq === myUname;
+          const isTheirs = String(r.addressee) === myId || rAdd === myUname;
+          const matchesThem = String(r.addressee) === String(otherId) || rAdd === cleanOther;
+          const matchesUs = String(r.requester) === String(otherId) || rReq === cleanOther;
           return (isMine && matchesThem) || (isTheirs && matchesUs);
         });
-        return rel ? { id: rel.id, status: rel.status, mine: rel.requester === myId || (rel.requester_username && rel.requester_username.toLowerCase() === myUname) } : null;
+        return rel ? { id: rel.id, status: rel.status, mine: String(rel.requester) === myId || (rel.requester_username && rel.requester_username.toLowerCase() === myUname) } : null;
       }
       const { data } = await this.sb.from('friendships').select('id,requester,addressee,status')
         .or(`and(requester.eq.${me.id},addressee.eq.${otherId}),and(requester.eq.${otherId},addressee.eq.${me.id})`).maybeSingle();
       return data ? { id: data.id, status: data.status, mine: data.requester === me.id } : null;
     },
 
-    async sendRequest(otherId) {
+    async sendRequest(otherIdOrUsername, targetProfile) {
       const me = this.me();
       const meId = me ? (me.id || me.username) : null;
       if (!meId) throw new Error('Precisas de iniciar sessão para adicionar amigos.');
-      const cleanOther = (otherId || '').toString().replace(/^usr_/, '').toLowerCase();
+
       const myUname = (me.username || '').toLowerCase();
-      if (meId === otherId || myUname === cleanOther) {
+      const myId = String(meId);
+
+      // Resolver dados do destinatário a partir do perfil passado ou das contas existentes
+      const accounts = LS.get('accounts', {});
+      const cleanOther = (otherIdOrUsername || '').toString().replace(/^usr_/, '').toLowerCase();
+      let targetAcc = targetProfile || null;
+      if (!targetAcc) {
+        targetAcc = accounts[cleanOther] || Object.values(accounts).find((a) =>
+          String(a.id).toLowerCase() === cleanOther || (a.username || '').toLowerCase() === cleanOther
+        );
+      }
+
+      const targetId = targetAcc?.id || otherIdOrUsername;
+      const targetUsername = (targetAcc?.username || cleanOther).toLowerCase();
+      const targetName = targetAcc?.display_name || targetAcc?.username || (targetUsername.charAt(0).toUpperCase() + targetUsername.slice(1));
+      const targetAvatar = targetAcc?.avatar || '👤';
+      const targetColor = targetAcc?.color !== undefined ? targetAcc.color : 190;
+      const targetXp = targetAcc?.xp || 0;
+
+      if (String(targetId).toLowerCase() === myId.toLowerCase() || targetUsername === myUname) {
         throw new Error('Não podes adicionar-te a ti próprio!');
       }
+
       if (!this.canNet) {
         const rows = LS.get('local_friendships', []);
-        const myId = (meId || '').toString();
         const exists = rows.find((r) => {
           const rReq = (r.requester_username || r.requester || '').toString().replace(/^usr_/, '').toLowerCase();
           const rAdd = (r.addressee_username || r.addressee || '').toString().replace(/^usr_/, '').toLowerCase();
-          const isMine = r.requester === myId || rReq === myUname;
-          const isTheirs = r.addressee === myId || rAdd === myUname;
-          return (isMine && (r.addressee === otherId || rAdd === cleanOther)) ||
-            (isTheirs && (r.requester === otherId || rReq === cleanOther));
+          const isMine = String(r.requester) === myId || rReq === myUname;
+          const isTheirs = String(r.addressee) === myId || rAdd === myUname;
+          return (isMine && (String(r.addressee) === String(targetId) || rAdd === targetUsername)) ||
+            (isTheirs && (String(r.requester) === String(targetId) || rReq === targetUsername));
         });
         if (exists) throw new Error('Já existe um pedido ou amizade com este jogador.');
+
+        // Registar também nas contas conhecidas para não se perder o avatar e nome
+        if (!accounts[targetUsername]) {
+          accounts[targetUsername] = {
+            id: targetId,
+            username: targetUsername,
+            display_name: targetName,
+            avatar: targetAvatar,
+            color: targetColor,
+            xp: targetXp
+          };
+          LS.set('accounts', accounts);
+        }
+
         rows.push({
           id: Date.now(),
           requester: meId,
           requester_username: myUname,
           requester_name: me.display_name || me.username,
           requester_avatar: me.avatar || '🎮',
-          requester_color: me.color || 190,
+          requester_color: me.color !== undefined ? me.color : 190,
           requester_xp: me.xp || 0,
-          addressee: otherId,
-          addressee_username: cleanOther,
-          status: 'pending'
+          addressee: targetId,
+          addressee_username: targetUsername,
+          addressee_name: targetName,
+          addressee_avatar: targetAvatar,
+          addressee_color: targetColor,
+          addressee_xp: targetXp,
+          status: 'pending',
+          created_at: new Date().toISOString()
         });
         LS.set('local_friendships', rows);
         return;
       }
 
       // Modo Supabase online
-      let targetUuid = otherId;
-      if (!/^[0-9a-f-]{36}$/i.test(otherId)) {
-        const { data: prof, error: pErr } = await this.sb.from('profiles').select('id').ilike('username', cleanOther).maybeSingle();
+      let targetUuid = targetId;
+      if (!/^[0-9a-f-]{36}$/i.test(String(targetId))) {
+        const { data: prof, error: pErr } = await this.sb.from('profiles').select('id').ilike('username', targetUsername).maybeSingle();
         if (pErr) throw pErr;
-        if (!prof) throw new Error(`O jogador @${cleanOther} ainda não criou conta no OmniPlay.`);
+        if (!prof) throw new Error(`O jogador @${targetUsername} ainda não criou conta no OmniPlay.`);
         targetUuid = prof.id;
       }
       const { error } = await this.sb.from('friendships').insert({ requester: this.user.id, addressee: targetUuid });
       if (error) throw new Error(error.code === '23505' ? 'Já existe um pedido ou amizade com este jogador.' : error.message);
     },
+
     async acceptRequest(fid) {
       if (!this.canNet) {
         const rows = LS.get('local_friendships', []);
-        const r = rows.find((x) => x.id === fid);
+        const r = rows.find((x) => String(x.id) === String(fid));
         if (r) r.status = 'accepted';
         LS.set('local_friendships', rows);
         return;
@@ -589,10 +693,11 @@
       const { error } = await this.sb.from('friendships').update({ status: 'accepted' }).eq('id', fid);
       if (error) throw error;
     },
+
     async removeFriendship(fid) {
       if (!this.canNet) {
         let rows = LS.get('local_friendships', []);
-        rows = rows.filter((x) => x.id !== fid);
+        rows = rows.filter((x) => String(x.id) !== String(fid));
         LS.set('local_friendships', rows);
         return;
       }

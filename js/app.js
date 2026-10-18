@@ -478,6 +478,12 @@
       handleRouteFromHash();
     });
 
+    const searchParams = new URLSearchParams(location.search);
+    if (searchParams.has('u') || searchParams.has('invite') || searchParams.has('add')) {
+      window.location.replace(`amigos.html${location.search}`);
+      return;
+    }
+
     if (!handleRouteFromHash()) {
       app.nav('hub');
     }
