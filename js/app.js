@@ -422,7 +422,16 @@
       const g = O.games.get(p.game);
       if (!g) return;
       toast(`<b>${esc(p.from.display_name)}</b> convidou-te para <b>${esc(g.name)}</b> (sala ${esc(p.room)})`, {
-        type: 'good', ms: 20000, actions: [{ label: 'Entrar', onClick: () => O.play.joinByCode(p.room, g.id) }]
+        type: 'good', ms: 20000, actions: [{
+          label: 'Entrar',
+          onClick: () => {
+            if (p.game === 'mexicana') {
+              window.location.href = `mexicana.html?room=${encodeURIComponent(p.room)}`;
+            } else {
+              O.play.joinByCode(p.room, g.id);
+            }
+          }
+        }]
       });
     });
     refresh();

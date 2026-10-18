@@ -38,7 +38,7 @@
     meta() {
       const me = B.me();
       return { uid: B.user ? B.user.id : null, name: me.display_name || me.username, avatar: me.avatar, color: me.color, xp: me.xp,
-        host: this.isHost, t: this.t, playing: this.playing };
+        host: this.isHost, t: this.t, playing: this.playing, maxPlayers: this.maxPlayers || (this.game ? this.game.maxPlayers : 4) };
     }
 
     async open() {
@@ -67,6 +67,8 @@
       const st = this.ch.presenceState();
       const list = Object.entries(st).map(([key, metas]) => ({ key, ...metas[0] }));
       list.sort((a, b) => (b.host ? 1 : 0) - (a.host ? 1 : 0) || a.t - b.t || a.key.localeCompare(b.key));
+      const host = list.find((m) => m.host);
+      if (host && host.maxPlayers) this.maxPlayers = host.maxPlayers;
       this.members = list;
       this.emit('members', list);
     }
@@ -77,9 +79,8 @@
       const host = this.members.find((m) => m.host);
       if (host.playing) throw new Error('Esse jogo já começou.');
       const idx = this.members.findIndex((m) => m.key === this.key);
-      if (idx >= this.game.maxPlayers || idx < 0) throw new Error('Sala cheia.');
-      const me = B.user && B.user.id;
-      if (me && this.members.some((m) => m.uid === me && m.key !== this.key)) throw new Error('Já estás nesta sala noutro separador.');
+      const max = this.maxPlayers || (this.game && this.game.maxPlayers) || 4;
+      if (idx >= max || idx < 0) throw new Error('Sala cheia.');
     }
 
     async setPlaying(v) { this.playing = v; await this.ch.track(this.meta()); }
@@ -88,9 +89,10 @@
   }
 
   const Rooms = {
-    async create(game) {
+    async create(game, maxPlayers) {
       for (let i = 0; i < 4; i++) {
         const room = new Room(newCode(), game, true);
+        if (maxPlayers) room.maxPlayers = maxPlayers;
         await room.open();
         if (room.members.filter((m) => m.host).length <= 1) return room; // código livre
         room.close();
@@ -119,7 +121,8 @@
         if (this.role === 'host') this._broadcast();
         this._check();
       } else {
-        setTimeout(() => { if (!this.state && !this.dead) this.room.send('need_state', {}); }, 900);
+        try { this.room.send('need_state', { token: this.token }); } catch { /* ignore */ }
+        setTimeout(() => { if (!this.state && !this.dead) this.room.send('need_state', { token: this.token }); }, 800);
       }
       if (this.game.tick && this.role !== 'guest') {
         this.timer = setInterval(() => {
