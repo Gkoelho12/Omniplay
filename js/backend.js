@@ -980,20 +980,37 @@
       ch.on('broadcast', { event: 'invite' }, ({ payload }) => {
         if (payload && payload.to === this.user.id) this.emit('invite', payload);
       });
-      ch.subscribe(async (st) => { if (st === 'SUBSCRIBED') await ch.track({ at: Date.now() }); });
+      // Promessa que indica quando o hub está pronto a enviar/receber (usada pelos convites)
+      this.hubReady = new Promise((resolve) => {
+        ch.subscribe(async (st) => {
+          if (st === 'SUBSCRIBED') { await ch.track({ at: Date.now() }); resolve(true); }
+          else if (st === 'CHANNEL_ERROR' || st === 'TIMED_OUT' || st === 'CLOSED') resolve(false);
+        });
+      });
       this.hub = ch;
     },
     leaveHub() {
       if (this.hub) { try { this.sb.removeChannel(this.hub); } catch { /* ignore */ } }
-      this.hub = null; this.onlineIds = new Set(); this.emit('presence');
+      this.hub = null; this.hubReady = null; this.onlineIds = new Set(); this.emit('presence');
     },
-    sendInvite(toId, room, game) {
-      if (!this.hub) return;
+    /** Envia um convite de sala a um amigo. Devolve true se o convite foi mesmo enviado. */
+    async sendInvite(toId, room, game) {
+      if (!this.canNet || !toId) return false;
+      if (!this.hub) this.joinHub();
+      if (!this.hub) return false;
+      const ready = await Promise.race([this.hubReady, new Promise((r) => setTimeout(() => r(false), 6000))]);
+      if (!ready) return false;
       const me = this.user;
-      this.hub.send({
-        type: 'broadcast', event: 'invite',
-        payload: { to: toId, room, game, from: { id: me.id, username: me.username, display_name: me.display_name } }
-      });
+      try {
+        const res = await this.hub.send({
+          type: 'broadcast', event: 'invite',
+          payload: {
+            to: toId, room, game,
+            from: { id: me.id, username: me.username, display_name: me.display_name, avatar: me.avatar, color: me.color }
+          }
+        });
+        return res === 'ok';
+      } catch { return false; }
     },
 
     newKey() { return uid(16); }

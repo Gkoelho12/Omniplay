@@ -1161,6 +1161,19 @@
     updateCounts();
   });
 
+  // Convites de sala recebidos enquanto estás na página de amigos
+  B.on('invite', (p) => {
+    if (p.game !== 'mexicana' || !p.from) return;
+    toast(`<b>${esc(p.from.display_name || p.from.username)}</b> convidou-te para jogar Mexicana (sala ${esc(p.room)})!`, {
+      type: 'good',
+      ms: 25000,
+      actions: [{
+        label: 'Entrar na Sala 🃏',
+        onClick: () => { window.location.href = `mexicana.html?room=${encodeURIComponent(p.room)}`; }
+      }]
+    });
+  });
+
   async function boot() {
     startBackground();
     await B.init();

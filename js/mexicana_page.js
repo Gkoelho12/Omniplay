@@ -7,6 +7,9 @@
   let currentSession = null;
   let currentRoom = null;
   let currentScreen = 'setup'; // 'setup' | 'lobby' | 'game'
+  let friendsCache = null;      // amigos carregados (para convites)
+  let setupFriendsDraw = null;  // redesenha a lista de amigos no ecrã inicial
+  let lobbyInviteDraw = null;   // redesenha a lista de convites no lobby
 
   /* ============ Fundo animado de estrelas ============ */
   function startBackground() {
@@ -201,6 +204,8 @@
   function leaveAll() {
     if (currentSession) { currentSession.destroy(); currentSession = null; }
     if (currentRoom) { currentRoom.close(); currentRoom = null; }
+    setupFriendsDraw = null;
+    lobbyInviteDraw = null;
     currentScreen = 'setup';
   }
 
@@ -397,54 +402,99 @@
     draw();
   }
 
+  /* ============ Convites: ajudantes partilhados ============ */
+  const INVITE_COOLDOWN_MS = 10000;
+
+  /** Obtém a lista de amigos (cache da página) */
+  async function fetchFriends(force = false) {
+    if (friendsCache && !force) return friendsCache;
+    try {
+      const { data } = await B.getFriends();
+      friendsCache = (data && data.friends) || [];
+    } catch {
+      friendsCache = [];
+    }
+    return friendsCache;
+  }
+
+  /** Amigos online primeiro, depois por nome */
+  function sortFriends(list) {
+    return [...list].sort((a, b) => {
+      const ao = B.onlineIds.has(a.profile.id) ? 0 : 1;
+      const bo = B.onlineIds.has(b.profile.id) ? 0 : 1;
+      return ao - bo || (a.profile.display_name || a.profile.username).localeCompare(b.profile.display_name || b.profile.username);
+    });
+  }
+
+  function roomShareUrl(code) {
+    const u = new URL('mexicana.html', location.href);
+    u.search = ''; u.hash = '';
+    u.searchParams.set('room', code);
+    return u.toString();
+  }
+
+  /** Envia o convite e dá feedback real ao utilizador */
+  async function inviteFriend(friend, room, btn) {
+    const name = friend.profile.display_name || friend.profile.username;
+    if (btn) { btn.disabled = true; btn.textContent = 'A enviar…'; }
+    const ok = await B.sendInvite(friend.profile.id, room.code, 'mexicana');
+    if (ok) {
+      toast(`Convite enviado a <b>${esc(name)}</b>! 🎉`, { type: 'good' });
+    } else {
+      toast(`Não foi possível enviar o convite a <b>${esc(name)}</b>. Partilha o link da sala.`, { type: 'bad' });
+    }
+    return ok;
+  }
+
   /* ============ Carregar Amigos Online para Desafiar ============ */
   async function loadOnlineFriendsList() {
     const box = $('#mx-friends-invite-list');
     if (!box) return;
-    try {
-      const { data } = await B.getFriends();
-      const friends = data.friends || [];
+    const friends = await fetchFriends(true);
+
+    const draw = () => {
+      const b = $('#mx-friends-invite-list');
+      if (!b || currentScreen !== 'setup') return;
       if (!friends.length) {
-        box.innerHTML = `<p class="muted small text-center pad-8">Ainda não tens amigos adicionados. <a href="amigos.html" style="color:var(--cyan);text-decoration:underline;">Adicionar amigos</a></p>`;
+        b.innerHTML = `<p class="muted small text-center pad-8">Ainda não tens amigos adicionados. <a href="amigos.html" style="color:var(--cyan);text-decoration:underline;">Adicionar amigos</a></p>`;
         return;
       }
-      box.innerHTML = friends.map((f) => {
+      b.innerHTML = `<div class="invite-list">${sortFriends(friends).map((f) => {
         const isOnline = B.onlineIds.has(f.profile.id);
+        const name = f.profile.display_name || f.profile.username;
         return `
-          <div class="user-search-row glass mb-8" style="padding:10px 14px;">
+          <div class="user-search-row glass invite-row ${isOnline ? '' : 'is-off'}">
             <div class="usr-avatar">${avatar(f.profile, 40)}</div>
             <div class="usr-info">
-              <b>${esc(f.profile.display_name || f.profile.username)}</b>
-              <small class="muted">@${esc(f.profile.username)} · ${isOnline ? '<span style="color:#34d399;">🟢 Online</span>' : 'Offline'}</small>
+              <b title="${esc(name)}">${esc(name)}</b>
+              <small class="muted">@${esc(f.profile.username)} · ${isOnline ? '<span style="color:#34d399;">🟢 Online</span>' : '⚪ Offline'}</small>
             </div>
             <div class="usr-actions">
-              <button class="btn btn-sm btn-neon" data-act="challenge-friend" data-id="${f.profile.id}" data-u="${esc(f.profile.username)}" data-name="${esc(f.profile.display_name || f.profile.username)}">
-                ⚔️ Desafiar
+              <button class="btn btn-sm ${isOnline ? 'btn-neon' : 'btn-ghost'}" data-act="challenge-friend" data-id="${f.profile.id}" ${isOnline ? '' : 'disabled title="Só podes convidar amigos que estejam online"'}>
+                ${isOnline ? '⚔️ Desafiar' : 'Offline'}
               </button>
             </div>
           </div>`;
-      }).join('');
+      }).join('')}</div>`;
 
-      $$('[data-act=challenge-friend]', box).forEach((btn) => (btn.onclick = async () => {
-        if (!B.account) {
-          openAuth('login');
-          return;
-        }
+      $$('[data-act=challenge-friend]', b).forEach((btn) => (btn.onclick = async () => {
+        if (!B.account) { openAuth('login'); return; }
+        const friend = friends.find((f) => f.profile.id === btn.dataset.id);
+        if (!friend) return;
         btn.disabled = true;
         btn.textContent = 'A criar sala…';
         try {
           const room = await createOnlineRoom(4);
-          B.sendInvite(btn.dataset.id, room.code, 'mexicana');
-          toast(`Convite enviado a <b>${btn.dataset.name}</b>!`, { type: 'good' });
-        } catch (e) {
-          toast(e.message, { type: 'bad' });
+          await inviteFriend(friend, room);
+        } catch {
           btn.disabled = false;
           btn.textContent = '⚔️ Desafiar';
         }
       }));
-    } catch {
-      box.innerHTML = `<p class="muted small text-center">Partilha o código da sala com amigos para jogarem juntos.</p>`;
-    }
+    };
+
+    setupFriendsDraw = draw;
+    draw();
   }
 
   /* ============ Criar Sala Online ============ */
@@ -467,6 +517,22 @@
     }
   }
 
+  /* ============ Aceitar um convite recebido ============ */
+  function acceptInvite(code) {
+    const inActiveGame = currentScreen === 'game' && currentSession && !currentSession.finished;
+    if (!inActiveGame && currentScreen !== 'lobby') { joinOnlineRoom(code); return; }
+    const m = openModal(`<div class="confirm">
+      <h2>Mudar de sala?</h2>
+      <p class="muted">${inActiveGame ? 'Vais sair da partida em curso' : 'Vais sair da tua sala atual'} para entrares na sala <b>${esc(code)}</b>.</p>
+      <div class="edit-actions" style="margin-top: 18px;">
+        <button class="btn btn-ghost" id="ai-stay" type="button">Ficar</button>
+        <button class="btn btn-neon" id="ai-go" type="button">Entrar na sala</button>
+      </div>
+    </div>`);
+    $('#ai-stay', m.el).onclick = () => m.close();
+    $('#ai-go', m.el).onclick = () => { m.close(); joinOnlineRoom(code); };
+  }
+
   /* ============ Entrar numa Sala Online ============ */
   async function joinOnlineRoom(code) {
     const game = O.games.get('mexicana');
@@ -482,6 +548,7 @@
     } catch (e) {
       closeT();
       toast(e.message || 'Não foi possível entrar na sala.', { type: 'bad' });
+      renderSetup('online'); // evita ficar com o ecrã em branco (ex.: link de sala inválido)
     }
   }
 
@@ -546,7 +613,8 @@
     currentScreen = 'lobby';
     currentRoom = room;
     const root = $('#game-root');
-    const shareUrl = `${location.origin}/mexicana.html?room=${room.code}`;
+    const shareUrl = roomShareUrl(room.code);
+    const shareText = `Entra na minha sala de Mexicana no OmniPlay! Código: ${room.code}`;
 
     root.innerHTML = `
       <section class="page lobby" style="--hue:330">
@@ -560,8 +628,9 @@
             </button>
             <small class="muted" id="lb-copy">Clica para copiar o código</small>
 
-            <div class="share-box mt-12" style="display:flex;flex-direction:column;gap:8px;">
+            <div class="share-box mt-12">
               <button class="btn btn-sm btn-neon w-full" id="btn-copy-room-link" type="button">🔗 Copiar Link de Partilha</button>
+              <a class="btn btn-sm btn-ghost w-full" id="btn-share-wa" href="https://wa.me/?text=${encodeURIComponent(shareText + ' ' + shareUrl)}" target="_blank" rel="noopener">💬 Enviar por WhatsApp</a>
               ${navigator.share ? '<button class="btn btn-sm btn-ghost w-full" id="btn-share-room-nat" type="button">📲 Partilhar Sala</button>' : ''}
             </div>
           </div>
@@ -613,7 +682,7 @@
         try {
           await navigator.share({
             title: 'Joga Mexicana comigo no OmniPlay!',
-            text: `Entra na minha sala de Mexicana (${room.code}) no OmniPlay!`,
+            text: shareText,
             url: shareUrl
           });
         } catch { /* cancel */ }
@@ -650,6 +719,7 @@
     }).join('');
 
     $('#lb-count').textContent = `${Math.min(ms.length, max)}/${max}`;
+    if (lobbyInviteDraw) lobbyInviteDraw(); // atualiza "Na sala ✓" / "Sala cheia"
 
     const ac = $('#lb-actions');
     const ready = ms.length >= game.minPlayers;
@@ -672,41 +742,63 @@
   async function loadLobbyInvites(room) {
     const box = $('#lb-invite');
     if (!box) return;
-    try {
-      const { data } = await B.getFriends();
-      const friends = data.friends || [];
-      const on = friends.filter((f) => B.onlineIds.has(f.profile.id));
+    lobbyInviteDraw = null;
+    const friends = await fetchFriends(true);
+    const sentAt = new Map(); // id do amigo -> timestamp do último convite
 
-      const render = () => {
-        const b = $('#lb-invite');
-        if (!b) return;
-        b.innerHTML = on.length
-          ? on.map((f) => `
-              <div class="user-search-row glass mb-8" style="padding:8px 12px;">
-                <div class="usr-avatar">${avatar(f.profile, 36)}</div>
-                <div class="usr-info">
-                  <b>${esc(f.profile.display_name)}</b>
-                  <small style="color:#34d399;">🟢 online</small>
-                </div>
-                <div class="usr-actions">
-                  <button class="btn btn-sm btn-neon" data-inv-id="${f.profile.id}">Convidar</button>
-                </div>
-              </div>`).join('')
-          : `<p class="muted small">Nenhum amigo online neste momento. Partilha o código ou o link da sala acima!</p>`;
+    const draw = () => {
+      const b = $('#lb-invite');
+      if (!b || currentRoom !== room || currentScreen !== 'lobby') return;
+      if (!friends.length) {
+        b.innerHTML = `<p class="muted small">Ainda não tens amigos adicionados. <a href="amigos.html" style="color:var(--cyan);text-decoration:underline;">Adicionar amigos</a> ou partilha o código / link da sala.</p>`;
+        return;
+      }
+      const max = room.maxPlayers || room.game.maxPlayers;
+      const full = room.members.length >= max;
+      const inRoom = new Set(room.members.map((m) => m.uid).filter(Boolean));
+      const onlineCount = friends.filter((f) => B.onlineIds.has(f.profile.id)).length;
 
-        $$('[data-inv-id]', b).forEach((btn) => (btn.onclick = () => {
-          B.sendInvite(btn.dataset.invId, room.code, 'mexicana');
-          btn.textContent = 'Enviado ✓';
-          btn.disabled = true;
-          toast('Convite enviado!', { type: 'good' });
-        }));
-      };
+      b.innerHTML = `
+        <p class="muted small mb-12">${onlineCount ? `${onlineCount} amig${onlineCount === 1 ? 'o' : 'os'} online. Clica em <b>Convidar</b> e ele recebe o convite no ecrã.` : 'Nenhum amigo online neste momento. Partilha o link ou o código da sala!'}</p>
+        <div class="invite-list">${sortFriends(friends).map((f) => {
+          const id = f.profile.id;
+          const name = f.profile.display_name || f.profile.username;
+          const online = B.onlineIds.has(id);
+          const joined = inRoom.has(id);
+          const recent = sentAt.has(id) && Date.now() - sentAt.get(id) < INVITE_COOLDOWN_MS;
+          let label = 'Convidar', disabled = false, cls = 'btn-neon';
+          if (joined) { label = 'Na sala ✓'; disabled = true; cls = 'btn-ghost'; }
+          else if (!online) { label = 'Offline'; disabled = true; cls = 'btn-ghost'; }
+          else if (full) { label = 'Sala cheia'; disabled = true; cls = 'btn-ghost'; }
+          else if (recent) { label = 'Enviado ✓'; disabled = true; cls = 'btn-ghost'; }
+          else if (sentAt.has(id)) { label = 'Reenviar'; }
+          return `
+            <div class="user-search-row glass invite-row ${online ? '' : 'is-off'}">
+              <div class="usr-avatar">${avatar(f.profile, 38)}</div>
+              <div class="usr-info">
+                <b title="${esc(name)}">${esc(name)}</b>
+                <small style="color:${online ? '#34d399' : 'var(--muted)'};">${online ? '🟢 Online' : '⚪ Offline'}</small>
+              </div>
+              <div class="usr-actions">
+                <button class="btn btn-sm ${cls}" data-inv-id="${id}" ${disabled ? 'disabled' : ''}>${label}</button>
+              </div>
+            </div>`;
+        }).join('')}</div>`;
 
-      render();
-      B.on('presence', () => { if (currentScreen === 'lobby') render(); });
-    } catch {
-      box.innerHTML = `<p class="muted small">Partilha o código da sala com amigos.</p>`;
-    }
+      $$('[data-inv-id]', b).forEach((btn) => (btn.onclick = async () => {
+        const friend = friends.find((f) => f.profile.id === btn.dataset.invId);
+        if (!friend) return;
+        const ok = await inviteFriend(friend, room, btn);
+        if (ok) {
+          sentAt.set(friend.profile.id, Date.now());
+          setTimeout(draw, INVITE_COOLDOWN_MS + 50); // volta a permitir "Reenviar"
+        }
+        draw();
+      }));
+    };
+
+    lobbyInviteDraw = draw;
+    draw();
   }
 
   /* ============ Anfitrião Começa a Partida ============ */
@@ -942,15 +1034,22 @@
 
     // Ouvir convites recebidos enquanto estiver na página de Mexicana:
     B.on('invite', (p) => {
-      if (p.game !== 'mexicana') return;
-      toast(`<b>${esc(p.from.display_name)}</b> convidou-te para jogar Mexicana (sala ${esc(p.room)})!`, {
+      if (p.game !== 'mexicana' || !p.from) return;
+      if (currentRoom && currentRoom.code === p.room) return; // já estás nessa sala
+      toast(`<b>${esc(p.from.display_name || p.from.username)}</b> convidou-te para jogar Mexicana (sala ${esc(p.room)})!`, {
         type: 'good',
         ms: 25000,
         actions: [{
           label: 'Entrar na Sala 🃏',
-          onClick: () => joinOnlineRoom(p.room)
+          onClick: () => acceptInvite(p.room)
         }]
       });
+    });
+
+    // Presença dos amigos mudou: atualiza as listas de convite visíveis
+    B.on('presence', () => {
+      if (currentScreen === 'setup' && setupFriendsDraw) setupFriendsDraw();
+      else if (currentScreen === 'lobby' && lobbyInviteDraw) lobbyInviteDraw();
     });
 
     // Verificar se a página foi aberta com parâmetros de URL:
@@ -959,8 +1058,13 @@
     const inviteParam = (urlParams.get('invite') || urlParams.get('u') || '').trim();
 
     if (roomParam && roomParam.length === 4) {
-      // Aberto diretamente com link de sala: ?room=ABCD
-      setTimeout(() => joinOnlineRoom(roomParam), 300);
+      // Aberto diretamente com link de sala: ?room=ABCD (é preciso estar autenticado)
+      setTimeout(() => {
+        if (B.account) { joinOnlineRoom(roomParam); return; }
+        renderSetup('online');
+        toast('Entra na tua conta para entrares na sala do teu amigo.', { type: 'warn' });
+        openAuth('login', () => joinOnlineRoom(roomParam));
+      }, 300);
       return;
     }
 
@@ -970,11 +1074,10 @@
         const doChallenge = async () => {
           try {
             const room = await createOnlineRoom(4);
-            const { data } = await B.getFriends();
-            const target = data?.friends?.find((f) => f.profile.username.toLowerCase() === inviteParam.toLowerCase());
+            const friends = await fetchFriends(true);
+            const target = friends.find((f) => f.profile.username.toLowerCase() === inviteParam.toLowerCase());
             if (target) {
-              B.sendInvite(target.profile.id, room.code, 'mexicana');
-              toast(`Sala criada! Convite enviado a <b>@${esc(inviteParam)}</b>!`, { type: 'good' });
+              await inviteFriend(target, room);
             } else {
               toast(`Sala criada (${room.code})! Partilha o link com <b>@${esc(inviteParam)}</b>.`, { type: 'good' });
             }
