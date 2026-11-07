@@ -44,8 +44,11 @@
     async open() {
       const ch = this.ch = B.sb.channel('room:' + this.code, { config: { presence: { key: this.key }, broadcast: { self: false, ack: false } } });
       ch.on('presence', { event: 'sync' }, () => this._sync());
-      ch.on('presence', { event: 'leave' }, ({ leftPresences }) => {
+      ch.on('presence', { event: 'leave' }, ({ key, currentPresences, leftPresences }) => {
         if (this.closed) return;
+        // Atualizar os próprios dados (ex.: setPlaying -> track) gera um "leave" da versão antiga
+        // mas o membro continua na sala: só conta como saída se já não houver presença com essa chave.
+        if ((currentPresences && currentPresences.length) || (key != null && this.ch.presenceState()[key])) return;
         (leftPresences || []).forEach((p) => this.emit(p.host ? 'hostleft' : 'memberleft', p));
       });
       ['start', 'state', 'action', 'abort', 'need_state'].forEach((evt) => ch.on('broadcast', { event: evt }, ({ payload }) => this.emit(evt, payload)));
