@@ -46,10 +46,15 @@
       ch.on('presence', { event: 'sync' }, () => this._sync());
       ch.on('presence', { event: 'leave' }, ({ key, currentPresences, leftPresences }) => {
         if (this.closed) return;
-        // Atualizar os próprios dados (ex.: setPlaying -> track) gera um "leave" da versão antiga
-        // mas o membro continua na sala: só conta como saída se já não houver presença com essa chave.
-        if ((currentPresences && currentPresences.length) || (key != null && this.ch.presenceState()[key])) return;
-        (leftPresences || []).forEach((p) => this.emit(p.host ? 'hostleft' : 'memberleft', p));
+        const stillHere = (currentPresences && currentPresences.length > 0) ||
+          (key != null && (this.ch.presenceState()[key] || []).length > 0);
+        if (stillHere) return;
+        // Confirma passado 1.5s que o jogador saiu mesmo (evita falsos "leave" durante sincronizações)
+        setTimeout(() => {
+          if (this.closed) return;
+          if (key != null && (this.ch.presenceState()[key] || []).length > 0) return;
+          (leftPresences || []).forEach((p) => this.emit(p.host ? 'hostleft' : 'memberleft', p));
+        }, 1500);
       });
       ['start', 'state', 'action', 'abort', 'need_state'].forEach((evt) => ch.on('broadcast', { event: evt }, ({ payload }) => this.emit(evt, payload)));
       await new Promise((res, rej) => {
@@ -62,13 +67,24 @@
         });
       });
       await ch.track(this.meta());
-      await sleep(700); // deixa a presença sincronizar
+      // O Supabase Realtime pode demorar ~1 a 2s a enviar a presença do anfitrião ao convidado
+      const deadline = Date.now() + (this.isHost ? 800 : 4500);
+      while (Date.now() < deadline) {
+        await sleep(150);
+        this._sync();
+        if (!this.isHost && this.members.some((m) => m.host)) break;
+      }
       this._sync();
     }
 
     _sync() {
       const st = this.ch.presenceState();
-      const list = Object.entries(st).map(([key, metas]) => ({ key, ...metas[0] }));
+      const list = Object.entries(st)
+        .filter(([, metas]) => metas && metas.length > 0)
+        .map(([key, metas]) => ({ key, ...metas[0] }));
+      if (!list.some((m) => m.key === this.key)) {
+        list.push({ key: this.key, ...this.meta() });
+      }
       list.sort((a, b) => (b.host ? 1 : 0) - (a.host ? 1 : 0) || a.t - b.t || a.key.localeCompare(b.key));
       const host = list.find((m) => m.host);
       if (host && host.maxPlayers) this.maxPlayers = host.maxPlayers;
@@ -86,7 +102,7 @@
       if (idx >= max || idx < 0) throw new Error('Sala cheia.');
     }
 
-    async setPlaying(v) { this.playing = v; await this.ch.track(this.meta()); }
+    async setPlaying(v) { this.playing = v; }
     send(event, payload) { if (!this.closed) this.ch.send({ type: 'broadcast', event, payload }); }
     close() { this.closed = true; try { B.sb.removeChannel(this.ch); } catch { /* ignore */ } }
   }

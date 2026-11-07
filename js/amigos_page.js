@@ -1179,6 +1179,9 @@
     await B.init();
     renderUserPill();
     renderAmigosPage();
+    if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+      navigator.serviceWorker.register('sw.js').then((r) => r.update()).catch(() => {});
+    }
   }
 
   document.addEventListener('DOMContentLoaded', boot);

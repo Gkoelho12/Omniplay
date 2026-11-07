@@ -148,7 +148,8 @@
     room.on('members', () => { if (P.room === room && P.screen === 'lobby') updateLobby(); });
     room.on('start', (p) => {
       if (P.room !== room || room.isHost) return;
-      const mySeat = p.players.findIndex((x) => x.key === room.key);
+      let mySeat = p.players.findIndex((x) => x.key === room.key);
+      if (mySeat < 0 && B.user?.id) mySeat = p.players.findIndex((x) => x.userId === B.user.id);
       closeAllModals();
       if (mySeat < 0) { toast('A partida começou sem ti.', { type: 'warn' }); return; }
       startGame({ game: room.game, players: p.players, role: 'guest', mySeats: [mySeat], room, token: p.token });

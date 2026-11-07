@@ -1,5 +1,5 @@
 /* OmniPlay · service worker: guarda a app para funcionar 100% offline */
-const CACHE = 'omniplay-v10';
+const CACHE = 'omniplay-v11';
 const SHELL = [
   './',
   'index.html',
@@ -73,17 +73,14 @@ self.addEventListener('fetch', (e) => {
     return;
   }
 
-  // Para assets estáticos (CSS, JS, imagens): stale-while-revalidate
+  // Para assets estáticos (CSS, JS, imagens): rede primeiro quando online, cache como fallback offline
   e.respondWith(
-    caches.match(req, { ignoreSearch: true }).then((hit) => {
-      const net = fetch(req).then((res) => {
-        if (res && res.status === 200 && (url.origin === location.origin || url.hostname.includes('gstatic') || url.hostname.includes('googleapis'))) {
-          const copy = res.clone();
-          caches.open(CACHE).then((c) => c.put(req, copy));
-        }
-        return res;
-      }).catch(() => hit);
-      return hit || net;
-    })
+    fetch(req).then((res) => {
+      if (res && res.status === 200 && (url.origin === location.origin || url.hostname.includes('gstatic') || url.hostname.includes('googleapis'))) {
+        const copy = res.clone();
+        caches.open(CACHE).then((c) => c.put(req, copy));
+      }
+      return res;
+    }).catch(() => caches.match(req, { ignoreSearch: true }))
   );
 });

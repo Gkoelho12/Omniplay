@@ -1095,7 +1095,7 @@ main#view.enter { animation: viewIn .5s cubic-bezier(.2, .8, .2, 1); }
 }
 .mx-center {
   position: relative;
-  width: clamp(58px, 13vw, 76px);
+  min-width: clamp(58px, 13vw, 76px);
   height: clamp(80px, 18vw, 108px);
   display: grid;
   place-items: center;
@@ -1134,17 +1134,14 @@ main#view.enter { animation: viewIn .5s cubic-bezier(.2, .8, .2, 1); }
 .mx-msg {
   text-align: center;
   font-size: clamp(0.92rem, 2.2vw, 1.1rem);
+  line-height: 1.4;
   min-height: 34px;
-  padding: 6px 18px;
-  border-radius: 99px;
+  padding: 8px 18px;
+  border-radius: 18px;
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.08);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
   margin: 0 auto;
-  max-width: 90%;
+  max-width: 92%;
 }
 .mx-log {
   display: flex;

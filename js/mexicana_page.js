@@ -560,7 +560,8 @@
 
     room.on('start', (p) => {
       if (currentRoom !== room || room.isHost) return;
-      const mySeat = p.players.findIndex((x) => x.key === room.key);
+      let mySeat = p.players.findIndex((x) => x.key === room.key);
+      if (mySeat < 0 && B.user?.id) mySeat = p.players.findIndex((x) => x.userId === B.user.id);
       closeAllModals();
       if (mySeat < 0) {
         toast('A partida começou sem ti.', { type: 'warn' });
@@ -1017,6 +1018,9 @@
 
   /* ============ Inicialização da Página ============ */
   async function boot() {
+    if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+      navigator.serviceWorker.register('sw.js').then((r) => r.update()).catch(() => {});
+    }
     startBackground();
     await B.init();
 
