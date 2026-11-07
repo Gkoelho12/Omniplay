@@ -115,6 +115,8 @@
         if (r !== '8' && !(r === '3' && effAt(s.center, i) === EIGHT)) break;
         skip++;
       }
+      // Nunca bloqueia o próprio jogador que jogou (no máximo bloqueia todos os s.n - 1 adversários e volta a jogar)
+      skip = Math.min(skip, Math.max(0, s.n - 1));
       if (skip) say(s, `⛔ ${skip} jogador${skip > 1 ? 'es' : ''} bloqueado${skip > 1 ? 's' : ''}`);
     }
     advance(s, 1 + skip);
