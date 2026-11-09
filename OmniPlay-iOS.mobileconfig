@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>PayloadContent</key>
+	<array>
+		<dict>
+			<key>FullScreen</key>
+			<true/>
+			<key>IgnoreManifestScope</key>
+			<false/>
+			<key>IsRemovable</key>
+			<true/>
+			<key>Label</key>
+			<string>OmniPlay</string>
+			<key>PayloadDescription</key>
+			<string>Instala a aplicação OmniPlay no ecrã principal do iOS em modo ecrã inteiro.</string>
+			<key>PayloadDisplayName</key>
+			<string>OmniPlay App</string>
+			<key>PayloadIdentifier</key>
+			<string>com.omniplay.app.webclip</string>
+			<key>PayloadType</key>
+			<string>com.apple.webClip.managed</string>
+			<key>PayloadUUID</key>
+			<string>8A9C7E12-4B5D-4E2A-9F1C-3D6E8A1B2C3D</string>
+			<key>PayloadVersion</key>
+			<integer>1</integer>
+			<key>Precomposed</key>
+			<true/>
+			<key>URL</key>
+			<string>https://gkoelho12.github.io/Omniplay/</string>
+		</dict>
+	</array>
+	<key>PayloadDescription</key>
+	<string>Instalador oficial da aplicação OmniPlay para iOS (iPhone e iPad).</string>
+	<key>PayloadDisplayName</key>
+	<string>OmniPlay — Instalador iOS</string>
+	<key>PayloadIdentifier</key>
+	<string>com.omniplay.app.profile</string>
+	<key>PayloadOrganization</key>
+	<string>OmniPlay</string>
+	<key>PayloadRemovalDisallowed</key>
+	<false/>
+	<key>PayloadType</key>
+	<string>Configuration</string>
+	<key>PayloadUUID</key>
+	<string>1F2E3D4C-5B6A-4789-8A1B-9C0D1E2F3A4B</string>
+	<key>PayloadVersion</key>
+	<integer>1</integer>
+</dict>
+</plist>
