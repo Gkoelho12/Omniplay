@@ -1,5 +1,5 @@
 /* OmniPlay · service worker: guarda a app para funcionar 100% offline */
-const CACHE = 'omniplay-v13';
+const CACHE = 'omniplay-v14';
 const SHELL = [
   './',
   'index.html',
