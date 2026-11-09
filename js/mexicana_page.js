@@ -436,8 +436,9 @@
   /** Envia o convite e dá feedback real ao utilizador */
   async function inviteFriend(friend, room, btn) {
     const name = friend.profile.display_name || friend.profile.username;
+    const target = friend.profile.id || friend.profile.username;
     if (btn) { btn.disabled = true; btn.textContent = 'A enviar…'; }
-    const ok = await B.sendInvite(friend.profile.id, room.code, 'mexicana');
+    const ok = await B.sendInvite(target, room.code, 'mexicana');
     if (ok) {
       toast(`Convite enviado a <b>${esc(name)}</b>! 🎉`, { type: 'good' });
     } else {
@@ -460,18 +461,18 @@
         return;
       }
       b.innerHTML = `<div class="invite-list">${sortFriends(friends).map((f) => {
-        const isOnline = B.onlineIds.has(f.profile.id);
+        const isOnline = B.onlineIds.has(f.profile.id) || (f.profile.username && B.onlineIds.has(f.profile.username.toLowerCase()));
         const name = f.profile.display_name || f.profile.username;
         return `
-          <div class="user-search-row glass invite-row ${isOnline ? '' : 'is-off'}">
+          <div class="user-search-row glass invite-row">
             <div class="usr-avatar">${avatar(f.profile, 40)}</div>
             <div class="usr-info">
               <b title="${esc(name)}">${esc(name)}</b>
               <small class="muted">@${esc(f.profile.username)} · ${isOnline ? '<span style="color:#34d399;">🟢 Online</span>' : '⚪ Offline'}</small>
             </div>
             <div class="usr-actions">
-              <button class="btn btn-sm ${isOnline ? 'btn-neon' : 'btn-ghost'}" data-act="challenge-friend" data-id="${f.profile.id}" ${isOnline ? '' : 'disabled title="Só podes convidar amigos que estejam online"'}>
-                ${isOnline ? '⚔️ Desafiar' : 'Offline'}
+              <button class="btn btn-sm btn-neon" data-act="challenge-friend" data-id="${f.profile.id || f.profile.username}">
+                ⚔️ Desafiar
               </button>
             </div>
           </div>`;
@@ -479,7 +480,7 @@
 
       $$('[data-act=challenge-friend]', b).forEach((btn) => (btn.onclick = async () => {
         if (!B.account) { openAuth('login'); return; }
-        const friend = friends.find((f) => f.profile.id === btn.dataset.id);
+        const friend = friends.find((f) => (f.profile.id || f.profile.username) === btn.dataset.id);
         if (!friend) return;
         btn.disabled = true;
         btn.textContent = 'A criar sala…';
@@ -762,19 +763,18 @@
       b.innerHTML = `
         <p class="muted small mb-12">${onlineCount ? `${onlineCount} amig${onlineCount === 1 ? 'o' : 'os'} online. Clica em <b>Convidar</b> e ele recebe o convite no ecrã.` : 'Nenhum amigo online neste momento. Partilha o link ou o código da sala!'}</p>
         <div class="invite-list">${sortFriends(friends).map((f) => {
-          const id = f.profile.id;
+          const id = f.profile.id || f.profile.username;
           const name = f.profile.display_name || f.profile.username;
-          const online = B.onlineIds.has(id);
-          const joined = inRoom.has(id);
+          const online = B.onlineIds.has(f.profile.id) || (f.profile.username && B.onlineIds.has(f.profile.username.toLowerCase()));
+          const joined = inRoom.has(f.profile.id);
           const recent = sentAt.has(id) && Date.now() - sentAt.get(id) < INVITE_COOLDOWN_MS;
-          let label = 'Convidar', disabled = false, cls = 'btn-neon';
+          let label = 'Convidar 📨', disabled = false, cls = 'btn-neon';
           if (joined) { label = 'Na sala ✓'; disabled = true; cls = 'btn-ghost'; }
-          else if (!online) { label = 'Offline'; disabled = true; cls = 'btn-ghost'; }
           else if (full) { label = 'Sala cheia'; disabled = true; cls = 'btn-ghost'; }
           else if (recent) { label = 'Enviado ✓'; disabled = true; cls = 'btn-ghost'; }
-          else if (sentAt.has(id)) { label = 'Reenviar'; }
+          else if (sentAt.has(id)) { label = 'Reenviar 📨'; }
           return `
-            <div class="user-search-row glass invite-row ${online ? '' : 'is-off'}">
+            <div class="user-search-row glass invite-row">
               <div class="usr-avatar">${avatar(f.profile, 38)}</div>
               <div class="usr-info">
                 <b title="${esc(name)}">${esc(name)}</b>
@@ -787,11 +787,11 @@
         }).join('')}</div>`;
 
       $$('[data-inv-id]', b).forEach((btn) => (btn.onclick = async () => {
-        const friend = friends.find((f) => f.profile.id === btn.dataset.invId);
+        const friend = friends.find((f) => (f.profile.id || f.profile.username) === btn.dataset.invId);
         if (!friend) return;
         const ok = await inviteFriend(friend, room, btn);
         if (ok) {
-          sentAt.set(friend.profile.id, Date.now());
+          sentAt.set(friend.profile.id || friend.profile.username, Date.now());
           setTimeout(draw, INVITE_COOLDOWN_MS + 50); // volta a permitir "Reenviar"
         }
         draw();

@@ -37,8 +37,15 @@
 
     meta() {
       const me = B.me();
-      return { uid: B.user ? B.user.id : null, name: me.display_name || me.username, avatar: me.avatar, color: me.color, xp: me.xp,
-        host: this.isHost, t: this.t, playing: this.playing, maxPlayers: this.maxPlayers || (this.game ? this.game.maxPlayers : 4) };
+      const myUid = B.user ? B.user.id : null;
+      const isH = !!this.isHost;
+      return {
+        key: this.key, uid: myUid, userId: myUid,
+        name: me.display_name || me.username, avatar: me.avatar, color: me.color, xp: me.xp,
+        host: isH, isHost: isH, t: this.t, joinedAt: this.t, playing: this.playing,
+        gameId: this.game ? this.game.id : 'mexicana',
+        maxPlayers: this.maxPlayers || (this.game ? this.game.maxPlayers : 4)
+      };
     }
 
     async open() {
@@ -53,7 +60,7 @@
         setTimeout(() => {
           if (this.closed) return;
           if (key != null && (this.ch.presenceState()[key] || []).length > 0) return;
-          (leftPresences || []).forEach((p) => this.emit(p.host ? 'hostleft' : 'memberleft', p));
+          (leftPresences || []).forEach((p) => this.emit((p.host || p.isHost) ? 'hostleft' : 'memberleft', p));
         }, 1500);
       });
       ['start', 'state', 'action', 'abort', 'need_state'].forEach((evt) => ch.on('broadcast', { event: evt }, ({ payload }) => this.emit(evt, payload)));
@@ -72,7 +79,7 @@
       while (Date.now() < deadline) {
         await sleep(150);
         this._sync();
-        if (!this.isHost && this.members.some((m) => m.host)) break;
+        if (!this.isHost && this.members.some((m) => m.host || m.isHost)) break;
       }
       this._sync();
     }
@@ -81,11 +88,17 @@
       const st = this.ch.presenceState();
       const list = Object.entries(st)
         .filter(([, metas]) => metas && metas.length > 0)
-        .map(([key, metas]) => ({ key, ...metas[0] }));
+        .map(([key, metas]) => {
+          const m = metas[0] || {};
+          const isH = Boolean(m.host || m.isHost);
+          const u = m.uid || m.userId || null;
+          const tVal = m.t || m.joinedAt || 0;
+          return { ...m, key: m.key || key, host: isH, isHost: isH, uid: u, userId: u, t: tVal, joinedAt: tVal };
+        });
       if (!list.some((m) => m.key === this.key)) {
         list.push({ key: this.key, ...this.meta() });
       }
-      list.sort((a, b) => (b.host ? 1 : 0) - (a.host ? 1 : 0) || a.t - b.t || a.key.localeCompare(b.key));
+      list.sort((a, b) => (b.host ? 1 : 0) - (a.host ? 1 : 0) || a.t - b.t || String(a.key).localeCompare(String(b.key)));
       const host = list.find((m) => m.host);
       if (host && host.maxPlayers) this.maxPlayers = host.maxPlayers;
       this.members = list;

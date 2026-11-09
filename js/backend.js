@@ -971,20 +971,49 @@
 
     /* ============ Hub realtime: presença + convites ============ */
     joinHub() {
-      if (!this.canNet || this.hub) return;
-      const ch = this.sb.channel('omni-hub', { config: { presence: { key: this.user.id }, broadcast: { self: false } } });
+      if (!this.canNet || !this.user?.id || this.hub) return;
+      const ch = this.sb.channel('omni-hub', { config: { presence: { key: this.user.id }, broadcast: { self: false, ack: false } } });
       ch.on('presence', { event: 'sync' }, () => {
-        this.onlineIds = new Set(Object.keys(ch.presenceState()));
+        const state = ch.presenceState();
+        const ids = new Set(Object.keys(state));
+        Object.values(state).forEach((arr) => {
+          (arr || []).forEach((m) => {
+            if (m && m.id) ids.add(String(m.id));
+            if (m && m.username) ids.add(String(m.username).toLowerCase());
+          });
+        });
+        this.onlineIds = ids;
         this.emit('presence');
       });
       ch.on('broadcast', { event: 'invite' }, ({ payload }) => {
-        if (payload && payload.to === this.user.id) this.emit('invite', payload);
+        if (!payload || !this.user) return;
+        const myId = this.user.id;
+        const myUname = (this.user.username || '').toLowerCase();
+        const pTo = String(payload.to || '');
+        const pToUname = String(payload.toUsername || '').toLowerCase();
+        if (
+          (myId && pTo === myId) ||
+          (myUname && pTo.toLowerCase() === myUname) ||
+          (myUname && pToUname === myUname)
+        ) {
+          this.emit('invite', payload);
+        }
       });
       // Promessa que indica quando o hub está pronto a enviar/receber (usada pelos convites)
       this.hubReady = new Promise((resolve) => {
         ch.subscribe(async (st) => {
-          if (st === 'SUBSCRIBED') { await ch.track({ at: Date.now() }); resolve(true); }
-          else if (st === 'CHANNEL_ERROR' || st === 'TIMED_OUT' || st === 'CLOSED') resolve(false);
+          if (st === 'SUBSCRIBED') {
+            try {
+              await ch.track({ id: this.user?.id, username: this.user?.username, at: Date.now() });
+            } catch { /* ignore */ }
+            resolve(true);
+          } else if (st === 'CHANNEL_ERROR' || st === 'TIMED_OUT' || st === 'CLOSED') {
+            if (this.hub === ch) {
+              this.hub = null;
+              this.hubReady = null;
+            }
+            resolve(false);
+          }
         });
       });
       this.hub = ch;
@@ -994,23 +1023,52 @@
       this.hub = null; this.hubReady = null; this.onlineIds = new Set(); this.emit('presence');
     },
     /** Envia um convite de sala a um amigo. Devolve true se o convite foi mesmo enviado. */
-    async sendInvite(toId, room, game) {
-      if (!this.canNet || !toId) return false;
-      if (!this.hub) this.joinHub();
-      if (!this.hub) return false;
-      const ready = await Promise.race([this.hubReady, new Promise((r) => setTimeout(() => r(false), 6000))]);
-      if (!ready) return false;
-      const me = this.user;
-      try {
-        const res = await this.hub.send({
-          type: 'broadcast', event: 'invite',
-          payload: {
-            to: toId, room, game,
-            from: { id: me.id, username: me.username, display_name: me.display_name, avatar: me.avatar, color: me.color }
+    async sendInvite(toId, room, game = 'mexicana') {
+      if (!this.canNet || !toId || !this.user?.id) return false;
+      let targetId = String(toId).trim();
+      let targetUsername = '';
+      if (!/^[0-9a-f-]{36}$/i.test(targetId)) {
+        const cleanU = targetId.replace(/^@/, '').toLowerCase();
+        targetUsername = cleanU;
+        try {
+          const { data: prof } = await this.sb.from('profiles').select('id,username').ilike('username', cleanU).maybeSingle();
+          if (prof?.id) {
+            targetId = prof.id;
+            targetUsername = (prof.username || cleanU).toLowerCase();
           }
-        });
-        return res === 'ok';
-      } catch { return false; }
+        } catch { /* ignore */ }
+      } else {
+        try {
+          const { data: prof } = await this.sb.from('profiles').select('username').eq('id', targetId).maybeSingle();
+          if (prof?.username) targetUsername = prof.username.toLowerCase();
+        } catch { /* ignore */ }
+      }
+
+      const me = this.user;
+      const trySendOnce = async () => {
+        if (!this.hub || !this.hubReady) {
+          this.leaveHub();
+          this.joinHub();
+        }
+        if (!this.hub || !this.hubReady) return false;
+        const ready = await Promise.race([this.hubReady, new Promise((r) => setTimeout(() => r(false), 5000))]);
+        if (!ready || !this.hub) return false;
+        try {
+          const res = await this.hub.send({
+            type: 'broadcast', event: 'invite',
+            payload: {
+              to: targetId, toUsername: targetUsername, room, game,
+              from: { id: me.id, username: me.username, display_name: me.display_name, avatar: me.avatar, color: me.color }
+            }
+          });
+          return res === 'ok';
+        } catch { return false; }
+      };
+
+      if (await trySendOnce()) return true;
+      this.leaveHub();
+      this.joinHub();
+      return trySendOnce();
     },
 
     newKey() { return uid(16); }
